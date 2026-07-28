@@ -289,6 +289,76 @@ def fetch_alio_api() -> list[dict]:
 
 
 # ═══════════════════════════════════════════
+def fetch_alio_web() -> list[dict]:
+    """
+    잡알리오 전산직 직접 크롤링 (API 키 불필요)
+    area=R8018 = 전산직, 최근 60일 공고를 최대 5페이지(250건)까지 수집
+    """
+    jobs = []
+    today = datetime.date.today()
+    s_date = (today - datetime.timedelta(days=60)).strftime("%Y.%m.%d")
+    e_date = today.strftime("%Y.%m.%d")
+    base_url = "https://job.alio.go.kr/recruit.do"
+
+    for page in range(1, 6):
+        params = {
+            "pageNo":   str(page),
+            "s_date":   s_date,
+            "e_date":   e_date,
+            "area":     "R8018",   # 전산직 코드
+            "order":    "REG_DATE",
+            "sort":     "DESC",
+            "pageSet":  "50",
+        }
+        try:
+            resp = requests.get(base_url, params=params, headers=HEADERS, timeout=20)
+            resp.raise_for_status()
+            soup = BeautifulSoup(resp.text, "html.parser")
+
+            job_links = soup.select("td a[href*='recruitview.do']")
+            if not job_links:
+                break
+
+            for link in job_links:
+                href  = link.get("href", "")
+                title = link.get_text(strip=True)
+
+                m = re.search(r"idx=(\d+)", href)
+                if not m:
+                    continue
+                idx    = m.group(1)
+                job_id = f"alio_{idx}"
+                url    = f"https://job.alio.go.kr/recruitview.do?idx={idx}"
+
+                row = link.find_parent("tr")
+                if not row:
+                    continue
+                cols = row.find_all("td")
+
+                # 컬럼: 0=번호 1=제목 2=기관명 3=근무지 4=고용형태 5=등록일 6=마감일 7=상태
+                org          = cols[2].get_text(strip=True) if len(cols) > 2 else ""
+                deadline_raw = cols[6].get_text(strip=True) if len(cols) > 6 else ""
+                deadline     = re.sub(r"\s*D[-–]\d+.*$", "", deadline_raw).strip()
+
+                jobs.append({
+                    "id":       job_id,
+                    "source":   "잡알리오",
+                    "title":    title,
+                    "org":      org,
+                    "deadline": deadline,
+                    "url":      url,
+                })
+
+        except Exception as e:
+            print(f"  잡알리오 웹 page {page} 오류: {e}", file=sys.stderr)
+            break
+
+    print(f"  잡알리오 웹 크롤링: {len(jobs)}건 수집")
+    return jobs
+# ═══════════════════════════════════════════
+
+
+# ═══════════════════════════════════════════
 # 크롤러 3: 한국철도공사 채용
 # ═══════════════════════════════════════════
 def fetch_korail() -> list[dict]:
@@ -629,6 +699,7 @@ def main():
     all_jobs: list[dict] = []
     all_jobs += fetch_kric()
     all_jobs += fetch_alio_api()
+    all_jobs += fetch_alio_web()
     all_jobs += fetch_korail()
     # all_jobs += fetch_jobkorea()  # 필요 시 주석 해제
     print(f"\n총 수집: {len(all_jobs)}건")
