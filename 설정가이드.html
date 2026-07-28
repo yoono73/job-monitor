@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>채용공고 모니터링 — 설정 가이드</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Malgun Gothic', '맑은 고딕', 'Apple SD Gothic Neo', sans-serif;
+    background: #f0f4f8; color: #1a1a1a; font-size: 13px;
+    line-height: 1.7; padding: 28px 20px;
+  }
+  .card { max-width: 840px; margin: 0 auto; background: #fff; border-radius: 12px;
+          box-shadow: 0 4px 20px rgba(0,0,0,0.09); overflow: hidden; }
+  .hdr { background: linear-gradient(135deg,#1a3a6b,#0f2a52); color: #fff; padding: 18px 24px; }
+  .hdr h1 { font-size: 20px; font-weight: 800; margin-bottom: 6px; }
+  .hdr p { font-size: 12px; color: #bdd4f5; }
+  .sec { padding: 18px 24px; border-bottom: 1px solid #e8edf3; }
+  .sec:last-child { border-bottom: none; }
+  .sec-title { display: flex; align-items: center; gap: 8px;
+               font-size: 15px; font-weight: 800; color: #1a3a6b;
+               margin-bottom: 14px; padding-bottom: 7px; border-bottom: 2px solid #dbeafe; }
+  .sn { background: #1a3a6b; color: #fff; width: 22px; height: 22px;
+        border-radius: 5px; display: flex; align-items: center; justify-content: center;
+        font-size: 11px; font-weight: 800; flex-shrink: 0; }
+  .step { display: flex; gap: 12px; margin-bottom: 12px; align-items: flex-start; }
+  .step-num { background: #dbeafe; color: #1d4ed8; font-weight: 800; font-size: 12px;
+              min-width: 24px; height: 24px; border-radius: 50%; display: flex;
+              align-items: center; justify-content: center; flex-shrink: 0; margin-top: 1px; }
+  .step-body { flex: 1; }
+  .step-body strong { color: #1a3a6b; display: block; margin-bottom: 3px; }
+  .step-body p { font-size: 12.5px; color: #374151; line-height: 1.7; }
+  .step-body a { color: #1d4ed8; }
+  code { background: #f1f5f9; border: 1px solid #d1d5db; border-radius: 4px;
+         padding: 1px 6px; font-family: 'Consolas','D2Coding',monospace; font-size: 12px; color: #1a1a1a; }
+  pre { background: #0f172a; border-radius: 8px; padding: 12px 14px;
+        font-family: 'Consolas','D2Coding',monospace; font-size: 12px;
+        color: #e2e8f0; overflow-x: auto; margin: 8px 0; line-height: 1.7; }
+  pre .c { color: #64748b; }
+  pre .k { color: #38bdf8; }
+  pre .v { color: #86efac; }
+  .warn { background: #fffbeb; border-left: 4px solid #f59e0b;
+          padding: 9px 13px; border-radius: 0 6px 6px 0; font-size: 12.5px;
+          color: #78350f; margin: 8px 0; }
+  .ok { background: #f0fdf4; border-left: 4px solid #16a34a;
+        padding: 9px 13px; border-radius: 0 6px 6px 0; font-size: 12.5px;
+        color: #14532d; margin: 8px 0; }
+  .secret-table { width: 100%; border-collapse: collapse; font-size: 12.5px; margin: 8px 0; }
+  .secret-table th { background: #1a3a6b; color: #fff; padding: 7px 10px; text-align: left; font-size: 12px; }
+  .secret-table td { padding: 7px 10px; border: 1px solid #d0dcea; vertical-align: top; }
+  .secret-table tr:nth-child(even) { background: #f7f9fc; }
+  .req { color: #dc2626; font-weight: 700; font-size: 11px; }
+  .opt { color: #6b7280; font-size: 11px; }
+  .timeline { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; margin-top: 12px; }
+  .tl { border-radius: 8px; padding: 10px 12px; border: 1.5px solid; }
+  .tl.now { border-color: #16a34a; background: #f0fdf4; }
+  .tl.week { border-color: #3b82f6; background: #eff6ff; }
+  .tl.month { border-color: #8b5cf6; background: #f5f3ff; }
+  .tl-head { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 5px; }
+  .tl.now .tl-head { color: #15803d; }
+  .tl.week .tl-head { color: #1d4ed8; }
+  .tl.month .tl-head { color: #7c3aed; }
+  .tl-items { font-size: 12px; line-height: 1.8; color: #374151; }
+  .ftr { background: #f0f5fb; padding: 12px 24px; font-size: 11.5px; color: #6b7280; border-top: 1px solid #d0dcea; }
+</style>
+</head>
+<body>
+<div class="card">
+
+  <div class="hdr">
+    <h1>채용공고 모니터링 — GitHub Actions 설정 가이드</h1>
+    <p>job_monitor.py · GitHub Actions · Gmail SMTP · 비용 0원 · 완전 자동화</p>
+  </div>
+
+  <!-- 준비물 -->
+  <div class="sec">
+    <div class="sec-title"><div class="sn">0</div>준비물 체크리스트</div>
+    <div class="ok">
+      ✅ <strong>필수:</strong> GitHub 계정 · Gmail 계정 · Python 3.11+ (로컬 테스트용)<br>
+      ✅ <strong>선택:</strong> data.go.kr 계정 (잡알리오 Open API 키 발급용)
+    </div>
+  </div>
+
+  <!-- STEP 1: GitHub -->
+  <div class="sec">
+    <div class="sec-title"><div class="sn">1</div>GitHub 저장소 생성 (10분)</div>
+
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-body">
+        <strong>github.com 접속 → 새 저장소 생성</strong>
+        <p>이름: <code>job-monitor</code> (자유) · 범위: <strong>Private</strong> (민감 정보 보호) · Initialize: 체크</p>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">2</div>
+      <div class="step-body">
+        <strong>이 폴더의 파일들을 저장소에 업로드</strong>
+        <p>
+          <code>job_monitor.py</code>&nbsp;·&nbsp;<code>requirements.txt</code>&nbsp;·&nbsp;<code>seen_ids.json</code>
+          을 GitHub 웹에서 드래그 업로드.<br>
+          <code>.github/workflows/job-monitor.yml</code>은 먼저 <code>.github/workflows/</code> 폴더를 만들어야 합니다.
+        </p>
+        <div class="warn">⚠️ macOS: <code>.github</code>는 숨김 폴더입니다. Finder → Cmd+Shift+G → 경로 입력 또는 터미널 사용</div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">3</div>
+      <div class="step-body">
+        <strong>또는 터미널에서 업로드</strong>
+<pre>
+<span class="c"># 터미널에서 이 폴더로 이동 후</span>
+git init
+git remote add origin https://github.com/<span class="k">YourUsername</span>/job-monitor.git
+git add .
+git commit -m "init: job monitor MVP"
+git push -u origin main
+</pre>
+      </div>
+    </div>
+  </div>
+
+  <!-- STEP 2: Gmail 앱 비밀번호 -->
+  <div class="sec">
+    <div class="sec-title"><div class="sn">2</div>Gmail 앱 비밀번호 발급 (5분)</div>
+
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-body">
+        <strong>Google 계정 2단계 인증 활성화</strong>
+        <p><a href="https://myaccount.google.com/security">myaccount.google.com/security</a> → 2단계 인증 켜기</p>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">2</div>
+      <div class="step-body">
+        <strong>앱 비밀번호 발급</strong>
+        <p><a href="https://myaccount.google.com/apppasswords">myaccount.google.com/apppasswords</a> → "앱 선택: 메일" → "기기: 기타(직접 입력): job-monitor" → 생성<br>
+        발급된 16자리 비밀번호를 복사해 두세요.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- STEP 3: GitHub Secrets -->
+  <div class="sec">
+    <div class="sec-title"><div class="sn">3</div>GitHub Secrets 등록 (5분)</div>
+    <p style="margin-bottom:10px;font-size:12.5px;">저장소 → <strong>Settings → Secrets and variables → Actions → New repository secret</strong></p>
+
+    <table class="secret-table">
+      <thead>
+        <tr>
+          <th style="width:200px;">Secret 이름</th>
+          <th style="width:60px;">필수</th>
+          <th>값 (예시)</th>
+          <th>설명</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>GMAIL_USER</code></td>
+          <td><span class="req">필수</span></td>
+          <td><code>yourname@gmail.com</code></td>
+          <td>발신 Gmail 주소</td>
+        </tr>
+        <tr>
+          <td><code>GMAIL_APP_PASSWORD</code></td>
+          <td><span class="req">필수</span></td>
+          <td><code>abcd efgh ijkl mnop</code></td>
+          <td>Step 2에서 발급한 16자리 앱 비밀번호</td>
+        </tr>
+        <tr>
+          <td><code>EMAIL_TO</code></td>
+          <td><span class="req">필수</span></td>
+          <td><code>yoono73@gmail.com</code></td>
+          <td>수신 이메일 (발신과 달라도 됨)</td>
+        </tr>
+        <tr>
+          <td><code>ALIO_API_KEY</code></td>
+          <td><span class="opt">선택</span></td>
+          <td><code>발급된 서비스키...</code></td>
+          <td>data.go.kr 잡알리오 API 키 (없으면 kric+코레일만 실행)</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- STEP 4: API 키 (선택) -->
+  <div class="sec">
+    <div class="sec-title"><div class="sn">4</div>(선택) 잡알리오 Open API 키 발급</div>
+
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-body">
+        <strong>data.go.kr 회원가입 후 API 신청</strong>
+        <p>
+          <a href="https://www.data.go.kr/data/15125273/openapi.do">data.go.kr → 재정경제부_공공기관 채용정보 조회서비스</a><br>
+          → "활용신청" 클릭 → 신청 내용 입력 → 즉시 발급
+        </p>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">2</div>
+      <div class="step-body">
+        <strong>API 엔드포인트 확인</strong>
+        <p>발급 후 실제 오퍼레이션 URL을 API 문서에서 확인하세요.<br>
+        <code>job_monitor.py</code> 상단 <code>fetch_alio_api()</code> 함수의 <code>url</code> 변수를 실제 엔드포인트로 교체.</p>
+        <div class="warn">⚠️ 엔드포인트 URL은 API 발급 후 마이페이지 → 오픈API 활용 현황에서 확인 가능합니다.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- STEP 5: 로컬 테스트 -->
+  <div class="sec">
+    <div class="sec-title"><div class="sn">5</div>로컬 테스트 (배포 전 확인)</div>
+
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-body">
+        <strong>Python 의존성 설치</strong>
+<pre>pip install -r requirements.txt</pre>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">2</div>
+      <div class="step-body">
+        <strong>환경변수 없이 실행 (이메일 미발송, HTML 파일로 미리보기)</strong>
+<pre>python job_monitor.py</pre>
+        <p>→ <code>report_preview.html</code> 생성됨 → 브라우저로 열어 리포트 형태 확인</p>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">3</div>
+      <div class="step-body">
+        <strong>이메일 발송 테스트 (선택)</strong>
+<pre>
+<span class="c"># Windows PowerShell</span>
+$env:GMAIL_USER="yourname@gmail.com"
+$env:GMAIL_APP_PASSWORD="your-app-password"
+$env:EMAIL_TO="yoono73@gmail.com"
+python job_monitor.py
+
+<span class="c"># macOS / Linux</span>
+GMAIL_USER="yourname@gmail.com" \
+GMAIL_APP_PASSWORD="your-app-password" \
+EMAIL_TO="yoono73@gmail.com" \
+python job_monitor.py
+</pre>
+      </div>
+    </div>
+  </div>
+
+  <!-- STEP 6: GitHub Actions 수동 실행 테스트 -->
+  <div class="sec">
+    <div class="sec-title"><div class="sn">6</div>GitHub Actions 수동 실행 테스트</div>
+
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-body">
+        <strong>파일 업로드 후 첫 실행 확인</strong>
+        <p>저장소 → <strong>Actions</strong> 탭 → "채용공고 모니터링" → <strong>Run workflow</strong> → 초록 체크 확인</p>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">2</div>
+      <div class="step-body">
+        <strong>이메일 수신 확인</strong>
+        <p>수신 이메일에서 리포트 확인 → 공고 링크 클릭 → 정상 작동 여부 확인</p>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">3</div>
+      <div class="step-body">
+        <strong>자동 스케줄 확인</strong>
+        <p><code>job-monitor.yml</code>의 cron <code>0 22 * * 0-4</code>이 UTC 기준이므로 KST 다음날 07:00에 실행됩니다.<br>
+        (즉, 월요일 KST 07:00 실행 = 일요일 UTC 22:00 cron)</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- 운영 타임라인 -->
+  <div class="sec">
+    <div class="sec-title"><div class="sn">7</div>운영 타임라인</div>
+    <div class="timeline">
+      <div class="tl now">
+        <div class="tl-head">🟢 오늘 즉시 (30분)</div>
+        <div class="tl-items">
+          ✅ 잡알리오 이메일 알림 설정<br>
+          ✅ data.go.kr API 키 신청<br>
+          ✅ GitHub 저장소 생성<br>
+          ✅ Secrets 등록
+        </div>
+      </div>
+      <div class="tl week">
+        <div class="tl-head">🔵 이번 주말 (4~6시간)</div>
+        <div class="tl-items">
+          ✅ 파일 업로드<br>
+          ✅ 로컬 테스트<br>
+          ✅ Actions 수동 실행 확인<br>
+          ✅ 이메일 수신 확인
+        </div>
+      </div>
+      <div class="tl month">
+        <div class="tl-head">🟣 8월 이후 (점진적 개선)</div>
+        <div class="tl-items">
+          🔲 서울교통공사 직접 페이지<br>
+          🔲 잡코리아 추가<br>
+          🔲 마감 강조 고도화<br>
+          🔲 주간 요약 리포트
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- FAQ -->
+  <div class="sec">
+    <div class="sec-title"><div class="sn">Q</div>자주 묻는 질문</div>
+
+    <div class="step" style="margin-bottom:14px;">
+      <div class="step-num" style="background:#fef3c7;color:#b45309;">Q</div>
+      <div class="step-body">
+        <strong>공고가 한 건도 안 온다면?</strong>
+        <p>Actions 로그에서 "kric: 0건" 또는 오류 확인 → kric 사이트 HTML 구조 변경 가능성.<br>
+        코워크 세션에서 <code>fetch_kric()</code> 파서 수정 후 다시 push.</p>
+      </div>
+    </div>
+
+    <div class="step" style="margin-bottom:14px;">
+      <div class="step-num" style="background:#fef3c7;color:#b45309;">Q</div>
+      <div class="step-body">
+        <strong>같은 공고가 계속 오면?</strong>
+        <p><code>seen_ids.json</code>이 저장소에 커밋되었는지 확인.<br>
+        Actions 로그에 "Update seen IDs" 커밋이 있으면 정상.</p>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num" style="background:#fef3c7;color:#b45309;">Q</div>
+      <div class="step-body">
+        <strong>잡코리아 추가하려면?</strong>
+        <p><code>job_monitor.py</code> 하단 주석 해제: <code># all_jobs += fetch_jobkorea()</code><br>
+        IP 차단 시 <code>time.sleep(3)</code> 추가 또는 해당 크롤러 비활성화.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="ftr">
+    채용공고 모니터링 MVP · job_monitor.py v1 · 2026.07.28 · Cowork 제작
+  </div>
+
+</div>
+</body>
+</html>
