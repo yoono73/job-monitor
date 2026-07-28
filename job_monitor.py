@@ -11,7 +11,7 @@ import json
 import re
 import smtplib
 import sys
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from pathlib import Path
@@ -295,8 +295,8 @@ def fetch_alio_web() -> list[dict]:
     area=R8018 = 전산직, 최근 60일 공고를 최대 5페이지(250건)까지 수집
     """
     jobs = []
-    today = datetime.date.today()
-    s_date = (today - datetime.timedelta(days=60)).strftime("%Y.%m.%d")
+    today = date.today()
+    s_date = (today - timedelta(days=60)).strftime("%Y.%m.%d")
     e_date = today.strftime("%Y.%m.%d")
     base_url = "https://job.alio.go.kr/recruit.do"
 
