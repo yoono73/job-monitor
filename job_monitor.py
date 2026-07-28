@@ -339,6 +339,11 @@ def fetch_alio_web() -> list[dict]:
                 org          = cols[2].get_text(strip=True) if len(cols) > 2 else ""
                 deadline_raw = cols[6].get_text(strip=True) if len(cols) > 6 else ""
                 deadline     = re.sub(r"\s*D[-–]\d+.*$", "", deadline_raw).strip()
+                status       = cols[7].get_text(strip=True) if len(cols) > 7 else ""
+
+                # 마감된 공고 제외
+                if "마감" in status:
+                    continue
 
                 jobs.append({
                     "id":       job_id,
