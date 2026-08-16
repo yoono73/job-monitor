@@ -233,7 +233,7 @@ export default function StatsPage() {
       supabase.from("lotto_analysis_meta").select("*").order("id", { ascending: false }).limit(1).single(),
       supabase.from("lotto_number_stats").select("*").order("bayesian_rank"),
       supabase.from("lotto_pair_stats").select("*").order("posterior_mean", { ascending: false }).limit(20),
-      supabase.from("lotto_draws").select("draw_no,draw_date,n1,n2,n3,n4,n5,n6,bonus,num_sum,odd_count,section_count,consecutive_pairs").order("draw_no"),
+      supabase.from("lotto_draws").select("draw_no,draw_date,n1,n2,n3,n4,n5,n6,bonus,num_sum,odd_count,section_count,consecutive_pairs").order("draw_no").limit(2000),
     ]).then(([{ data: metaData }, { data: numsData }, { data: pairsData }, { data: drawsData }]) => {
       if (metaData) setMeta(metaData as MetaRow);
       if (numsData) setNums(numsData as NumberStat[]);
