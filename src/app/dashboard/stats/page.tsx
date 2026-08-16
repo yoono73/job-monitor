@@ -224,6 +224,7 @@ export default function StatsPage() {
   const [nums, setNums]     = useState<NumberStat[]>([]);
   const [pairs, setPairs]   = useState<PairStat[]>([]);
   const [draws, setDraws]   = useState<DrawRow[]>([]);
+  const [latestDraw, setLatestDraw] = useState<DrawRow | null>(null);
   const [loading, setLoading] = useState(true);
   const [sortMode, setSortMode] = useState<"rank" | "number">("rank");
   const [patternTab, setPatternTab] = useState<"sum" | "odd" | "sec" | "con" | "end">("sum");
@@ -234,11 +235,14 @@ export default function StatsPage() {
       supabase.from("lotto_number_stats").select("*").order("bayesian_rank"),
       supabase.from("lotto_pair_stats").select("*").order("posterior_mean", { ascending: false }).limit(20),
       supabase.from("lotto_draws").select("draw_no,draw_date,n1,n2,n3,n4,n5,n6,bonus,num_sum,odd_count,section_count,consecutive_pairs").order("draw_no").limit(2000),
-    ]).then(([{ data: metaData }, { data: numsData }, { data: pairsData }, { data: drawsData }]) => {
+      // 최신 당첨번호 별도 쿼리 (limit 제약 무관하게 항상 최신 1개)
+      supabase.from("lotto_draws").select("draw_no,draw_date,n1,n2,n3,n4,n5,n6,bonus").order("draw_no", { ascending: false }).limit(1).single(),
+    ]).then(([{ data: metaData }, { data: numsData }, { data: pairsData }, { data: drawsData }, { data: latestData }]) => {
       if (metaData) setMeta(metaData as MetaRow);
       if (numsData) setNums(numsData as NumberStat[]);
       if (pairsData) setPairs(pairsData as PairStat[]);
       if (drawsData) setDraws(drawsData as DrawRow[]);
+      if (latestData) setLatestDraw(latestData as DrawRow);
       setLoading(false);
     });
   }, [supabase]);
@@ -412,8 +416,8 @@ export default function StatsPage() {
 
       {/* ── 🎯 최신 회차 분석 카드 ── */}
       {(() => {
-        if (draws.length === 0 || nums.length === 0) return null;
-        const latest = draws[draws.length - 1];
+        if ((!latestDraw && draws.length === 0) || nums.length === 0) return null;
+        const latest = latestDraw ?? draws[draws.length - 1];
         const latestNums = [latest.n1, latest.n2, latest.n3, latest.n4, latest.n5, latest.n6];
         const hotSet = new Set(nums.slice(0, 10).map(n => n.number));
         const coldSet = new Set(nums.slice(-10).map(n => n.number));
