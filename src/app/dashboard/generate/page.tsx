@@ -19,7 +19,8 @@ type MethodKey =
   | "pattern" | "hot_pattern" | "cold_pattern" | "ac"
   | "random" | "balance" | "section" | "ending"
   | "bayes" | "fav" | "prime" | "norepeat"
-  | "overdue" | "recent20" | "bayes_overdue";
+  | "overdue" | "recent20" | "bayes_overdue"
+  | "spread";
 
 interface BayesStat {
   number: number;
@@ -426,6 +427,19 @@ function genTopFreq(draws: DrawRow[]): Six {
   return sel.sort((a, b) => a - b) as Six;
 }
 
+/* ── 번호 분산 전략 — 세트 간 번호 중복 최소화 ── */
+function genSpread(usedNumbers: Set<number>): Six {
+  const all = Array.from({ length: 45 }, (_, i) => i + 1);
+  // 아직 한 번도 사용되지 않은 번호 우선 사용
+  const unused = all.filter(n => !usedNumbers.has(n));
+  const pool = unused.length >= 6 ? unused : all; // 번호가 부족하면 전체 pool 사용
+  for (let t = 0; t < 5000; t++) {
+    const nums = [...pool].sort(() => Math.random() - 0.5).slice(0, 6).sort((a, b) => a - b) as Six;
+    if (isBalanced(nums)) return nums;
+  }
+  return pool.sort(() => Math.random() - 0.5).slice(0, 6).sort((a, b) => a - b) as Six;
+}
+
 /* ─── Method Registry ─── */
 const METHODS: Record<MethodKey, { category: string; icon: string; label: string; desc: string }> = {
   fav:          { category: "개인화",  icon: "⭐", label: "선호번호",  desc: "내 번호 2~4개 우선 포함" },
@@ -447,6 +461,7 @@ const METHODS: Record<MethodKey, { category: string; icon: string; label: string
   bayes_overdue:{ category: "베이지안", icon: "🔮", label: "복합전략",    desc: "베이지안 확률 × 오버듀 지수 복합 점수" },
   overdue:      { category: "통계기반", icon: "⏰", label: "오버듀",     desc: "오래 안 나온 번호 위주 (미출현 주기 기반)" },
   recent20:     { category: "통계기반", icon: "📅", label: "최근20회",   desc: "최근 20회 고빈도 번호 집중" },
+  spread:       { category: "균형기반", icon: "🌐", label: "분산커버",   desc: "세트 간 번호 중복 최소화 · 더 많은 번호 커버" },
 };
 
 const CATEGORY_GROUPS = [
@@ -454,7 +469,7 @@ const CATEGORY_GROUPS = [
   { cat: "베이지안", keys: ["bayes", "bayes_overdue"] as MethodKey[] },
   { cat: "통계기반", keys: ["hot", "cold", "pairs", "carryover", "norepeat", "overdue", "recent20"] as MethodKey[] },
   { cat: "패턴기반", keys: ["pattern", "hot_pattern", "cold_pattern", "ac", "prime"] as MethodKey[] },
-  { cat: "균형기반", keys: ["random", "balance", "section", "ending"] as MethodKey[] },
+  { cat: "균형기반", keys: ["random", "balance", "section", "ending", "spread"] as MethodKey[] },
 ];
 
 const DEFAULT_KEYS: MethodKey[] = [
@@ -462,7 +477,7 @@ const DEFAULT_KEYS: MethodKey[] = [
   "pairs", "norepeat", "prime", "section",
 ];
 
-function runGenerator(key: MethodKey, draws: DrawRow[], bayesStats?: BayesStat[], favorites?: number[]): Six {
+function runGenerator(key: MethodKey, draws: DrawRow[], bayesStats?: BayesStat[], favorites?: number[], usedNumbers?: Set<number>): Six {
   switch (key) {
     case "fav":          return genFavorites(favorites ?? []);
     case "hot":          return genHot(draws);
@@ -483,6 +498,7 @@ function runGenerator(key: MethodKey, draws: DrawRow[], bayesStats?: BayesStat[]
     case "bayes_overdue": return genBayesOverdue(draws, bayesStats ?? []);
     case "overdue":      return genOverdue(draws);
     case "recent20":     return genRecent20(draws);
+    case "spread":       return genSpread(usedNumbers ?? new Set());
   }
 }
 
@@ -719,13 +735,13 @@ export default function GeneratePage() {
     if (!ready || busy) return;
     setBusy(true); setSets(null); setSavedSets(new Set());
     setTimeout(() => {
+      const usedNums = new Set<number>();
       setSets(
-        methodKeys.map((key, i) => ({
-          idx: i + 1,
-          ...METHODS[key],
-          method: METHODS[key].label,
-          numbers: runGenerator(key, draws, bayesStats, favorites),
-        }))
+        methodKeys.map((key, i) => {
+          const numbers = runGenerator(key, draws, bayesStats, favorites, usedNums);
+          numbers.forEach(n => usedNums.add(n));
+          return { idx: i + 1, ...METHODS[key], method: METHODS[key].label, numbers };
+        })
       );
       setBusy(false);
     }, 700);
