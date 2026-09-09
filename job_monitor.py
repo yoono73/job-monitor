@@ -23,7 +23,9 @@ from bs4 import BeautifulSoup
 # ═══════════════════════════════════════════
 # 환경변수 (GitHub Actions Secrets에서 주입)
 # ═══════════════════════════════════════════
-EMAIL_TO        = os.environ.get("EMAIL_TO",           "yoono73@gmail.com")
+_EMAIL_TO_RAW = os.environ.get("EMAIL_TO", "yoono73@gmail.com")
+EMAIL_TO_LIST = [e.strip() for e in _EMAIL_TO_RAW.split(",") if e.strip()]
+EMAIL_TO = ", ".join(EMAIL_TO_LIST)  # To 헤더용
 GMAIL_USER      = os.environ.get("GMAIL_USER",         "")   # 발신 Gmail 주소
 GMAIL_PASSWORD  = os.environ.get("GMAIL_APP_PASSWORD", "")   # Gmail 앱 비밀번호
 ALIO_API_KEY    = os.environ.get("ALIO_API_KEY",       "")   # data.go.kr API 키 (선택)
@@ -678,7 +680,7 @@ def send_email(html: str, subject: str):
     try:
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
             server.login(GMAIL_USER, GMAIL_PASSWORD)
-            server.sendmail(GMAIL_USER, EMAIL_TO, msg.as_string())
+            server.sendmail(GMAIL_USER, EMAIL_TO_LIST, msg.as_string())
         print(f"✉️  이메일 발송 완료 → {EMAIL_TO}")
     except Exception as e:
         print(f"이메일 발송 실패: {e}", file=sys.stderr)
