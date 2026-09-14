@@ -1,37 +1,37 @@
-name: 채용공고 모니?�링
+﻿name: 梨꾩슜怨듦퀬 紐⑤땲?곕쭅
 
 on:
   schedule:
-    # UTC 22:00 = KST 07:00 (?�음?? ???�일(??�? ?�행
+    # UTC 22:00 = KST 07:00 (?ㅼ쓬?? ???됱씪(??湲? ?ㅽ뻾
     - cron: '0 22 * * 0-4'
-  # ?�동 ?�행 (GitHub ?�에??"Run workflow" 버튼)
+  # ?섎룞 ?ㅽ뻾 (GitHub ?뱀뿉??"Run workflow" 踰꾪듉)
   workflow_dispatch:
 
 jobs:
   monitor:
     runs-on: ubuntu-latest
     permissions:
-      contents: write   # seen_ids.json 커밋 권한
+      contents: write   # seen_ids.json 而ㅻ컠 沅뚰븳
 
     steps:
-      # 1. ?�스 체크?�웃
+      # 1. ?뚯뒪 泥댄겕?꾩썐
       - name: Checkout
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      # 2. Python ?�정
+      # 2. Python ?ㅼ젙
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
           cache: 'pip'
 
-      # 3. ?�존???�치
+      # 3. ?섏〈???ㅼ튂
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      # 4. ?�크립트 ?�행
+      # 4. ?ㅽ겕由쏀듃 ?ㅽ뻾
       - name: Run job monitor
         env:
           EMAIL_TO:          ${{ secrets.EMAIL_TO }}
@@ -39,9 +39,10 @@ jobs:
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
           ALIO_API_KEY:      ${{ secrets.ALIO_API_KEY }}
         EMAIL_TO_ADMIN: ${{ secrets.EMAIL_TO_ADMIN }}
+        EMAIL_TO_ADMIN: ${{ secrets.EMAIL_TO_ADMIN }}
         run: python job_monitor.py
 
-      # 5. seen_ids.json 변�???커밋 (중복 ?�림 방�?)
+      # 5. seen_ids.json 蹂寃???而ㅻ컠 (以묐났 ?뚮┝ 諛⑹?)
       - name: Save seen IDs
         run: |
           git config user.name  "github-actions[bot]"
