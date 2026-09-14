@@ -1,10 +1,10 @@
-name: 채용공고 모니터링
+name: 채용공고 모니?�링
 
 on:
   schedule:
-    # UTC 22:00 = KST 07:00 (다음날) — 평일(월~금) 실행
+    # UTC 22:00 = KST 07:00 (?�음?? ???�일(??�? ?�행
     - cron: '0 22 * * 0-4'
-  # 수동 실행 (GitHub 웹에서 "Run workflow" 버튼)
+  # ?�동 ?�행 (GitHub ?�에??"Run workflow" 버튼)
   workflow_dispatch:
 
 jobs:
@@ -14,33 +14,34 @@ jobs:
       contents: write   # seen_ids.json 커밋 권한
 
     steps:
-      # 1. 소스 체크아웃
+      # 1. ?�스 체크?�웃
       - name: Checkout
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      # 2. Python 설정
+      # 2. Python ?�정
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
           cache: 'pip'
 
-      # 3. 의존성 설치
+      # 3. ?�존???�치
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      # 4. 스크립트 실행
+      # 4. ?�크립트 ?�행
       - name: Run job monitor
         env:
           EMAIL_TO:          ${{ secrets.EMAIL_TO }}
           GMAIL_USER:        ${{ secrets.GMAIL_USER }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
           ALIO_API_KEY:      ${{ secrets.ALIO_API_KEY }}
+        EMAIL_TO_ADMIN: ${{ secrets.EMAIL_TO_ADMIN }}
         run: python job_monitor.py
 
-      # 5. seen_ids.json 변경 시 커밋 (중복 알림 방지)
+      # 5. seen_ids.json 변�???커밋 (중복 ?�림 방�?)
       - name: Save seen IDs
         run: |
           git config user.name  "github-actions[bot]"
@@ -48,3 +49,4 @@ jobs:
           git add seen_ids.json
           git diff --staged --quiet || git commit -m "chore: update seen_ids [skip ci]"
           git push
+
