@@ -665,18 +665,21 @@ def main():
     print(f"seen_ids.json 업데이트: 총 {len(seen)}건")
 
     # ── 본인 이메일 발송 ──
-    html_tech = build_html_report(matched_tech, today_str, "전산·통신직 채용 모니터링")
-    subject_tech = f"[채용] {now.strftime('%m/%d')} 전산/통신 신규 {len(matched_tech)}건" + (
-        f" ⚡D-{URGENT_DAYS}↓ {sum(1 for j in matched_tech if (j.get('days_left') or 99) <= URGENT_DAYS)}건"
-        if any((j.get("days_left") or 99) <= URGENT_DAYS for j in matched_tech)
-        else ""
-    )
-    send_email(html_tech, subject_tech,
-               EMAIL_TO_LIST, EMAIL_TO,
-               preview_filename="report_preview_tech.html")
+    if matched_tech:
+        html_tech = build_html_report(matched_tech, today_str, "전산·통신직 채용 모니터링")
+        subject_tech = f"[채용] {now.strftime('%m/%d')} 전산/통신 신규 {len(matched_tech)}건" + (
+            f" ⚡D-{URGENT_DAYS}↓ {sum(1 for j in matched_tech if (j.get('days_left') or 99) <= URGENT_DAYS)}건"
+            if any((j.get("days_left") or 99) <= URGENT_DAYS for j in matched_tech)
+            else ""
+        )
+        send_email(html_tech, subject_tech,
+                   EMAIL_TO_LIST, EMAIL_TO,
+                   preview_filename="report_preview_tech.html")
+    else:
+        print("  전산직 매칭 없음 — 이메일 발송 건너뜀")
 
     # ── 동료 이메일 발송 ──
-    if EMAIL_TO_ADMIN_LIST:
+    if EMAIL_TO_ADMIN_LIST and matched_admin:
         html_admin = build_html_report(matched_admin, today_str, "행정직(계약·예산·회계·재무) 채용 모니터링")
         subject_admin = f"[채용] {now.strftime('%m/%d')} 행정직 신규 {len(matched_admin)}건" + (
             f" ⚡D-{URGENT_DAYS}↓ {sum(1 for j in matched_admin if (j.get('days_left') or 99) <= URGENT_DAYS)}건"
@@ -686,8 +689,10 @@ def main():
         send_email(html_admin, subject_admin,
                    EMAIL_TO_ADMIN_LIST, EMAIL_TO_ADMIN,
                    preview_filename="report_preview_admin.html")
-    else:
+    elif not EMAIL_TO_ADMIN_LIST:
         print("  동료 이메일 미설정 (EMAIL_TO_ADMIN 없음) — 행정직 리포트 건너뜀")
+    else:
+        print("  행정직 매칭 없음 — 동료 이메일 발송 건너뜀")
 
     print("\n완료.")
 
