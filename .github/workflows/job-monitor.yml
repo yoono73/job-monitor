@@ -1,48 +1,40 @@
-﻿name: 梨꾩슜怨듦퀬 紐⑤땲?곕쭅
+﻿name: Job Monitor
 
 on:
   schedule:
-    # UTC 22:00 = KST 07:00 (?ㅼ쓬?? ???됱씪(??湲? ?ㅽ뻾
     - cron: '0 22 * * 0-4'
-  # ?섎룞 ?ㅽ뻾 (GitHub ?뱀뿉??"Run workflow" 踰꾪듉)
   workflow_dispatch:
 
 jobs:
   monitor:
     runs-on: ubuntu-latest
     permissions:
-      contents: write   # seen_ids.json 而ㅻ컠 沅뚰븳
+      contents: write
 
     steps:
-      # 1. ?뚯뒪 泥댄겕?꾩썐
       - name: Checkout
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      # 2. Python ?ㅼ젙
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
           cache: 'pip'
 
-      # 3. ?섏〈???ㅼ튂
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      # 4. ?ㅽ겕由쏀듃 ?ㅽ뻾
       - name: Run job monitor
         env:
-          EMAIL_TO:          ${{ secrets.EMAIL_TO }}
-          GMAIL_USER:        ${{ secrets.GMAIL_USER }}
+          EMAIL_TO:           ${{ secrets.EMAIL_TO }}
+          GMAIL_USER:         ${{ secrets.GMAIL_USER }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
-          ALIO_API_KEY:      ${{ secrets.ALIO_API_KEY }}
-        EMAIL_TO_ADMIN: ${{ secrets.EMAIL_TO_ADMIN }}
-        EMAIL_TO_ADMIN: ${{ secrets.EMAIL_TO_ADMIN }}
+          ALIO_API_KEY:       ${{ secrets.ALIO_API_KEY }}
+          EMAIL_TO_ADMIN:     ${{ secrets.EMAIL_TO_ADMIN }}
         run: python job_monitor.py
 
-      # 5. seen_ids.json 蹂寃???而ㅻ컠 (以묐났 ?뚮┝ 諛⑹?)
       - name: Save seen IDs
         run: |
           git config user.name  "github-actions[bot]"
@@ -50,4 +42,3 @@ jobs:
           git add seen_ids.json
           git diff --staged --quiet || git commit -m "chore: update seen_ids [skip ci]"
           git push
-
