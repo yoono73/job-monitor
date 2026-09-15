@@ -223,15 +223,16 @@ def fetch_krid(api_key: str, sido_cd: str, sido_nm: str) -> tuple[list[dict], li
         for item in items:
             _g = lambda tag, _item=item: (_item.findtext(tag) or "").strip()
 
-            no    = _g("no")
-            title = _g("title")
+            # 실제 XML 태그명 (대문자 언더스코어)
+            no    = _g("NO")
+            title = _g("ENT_TITLE")
             if not title:
                 continue
 
-            job_id = f"krid_{no}" if no else f"krid_{abs(hash(title + _g('instNm')))}"
+            job_id = f"krid_{no}" if no else f"krid_{abs(hash(title + _g('ENT_NAME')))}"
 
-            # recruitStatus: "접수중" | "마감" 등
-            status = _g("recruitStatus")
+            # STATUS: 마감 여부
+            status = _g("STATUS")
             if status and "마감" in status:
                 continue
 
@@ -240,20 +241,20 @@ def fetch_krid(api_key: str, sido_cd: str, sido_nm: str) -> tuple[list[dict], li
                 "source":           "지역정보개발원",
                 "source_type":      f"지방공기업({sido_nm})",
                 "title":            title,
-                "org":              _g("instNm"),
-                "inst_type":        _g("instType"),    # 지방공기업 | 출자출연기관
-                "deadline":         _g("receiptClose"),
-                "url":              _g("linkUrl") or "https://job.cleaneye.go.kr",
-                "field":            _g("recruitField"),
+                "org":              _g("ENT_NAME"),
+                "inst_type":        _g("ENT_GB"),       # 지방공기업 | 출자출연기관
+                "deadline":         _g("PUB_END_DATE"),
+                "url":              _g("URL") or "https://job.cleaneye.go.kr",
+                "field":            _g("JOB_TYPE"),
                 "ncs_codes":        "",
-                "employ_type":      _g("employType"),
-                "recruit_division": _g("recruitDivision"),
-                "region":           _g("workPlace"),
-                "body":             _g("jobDetail"),
-                "certificate":      _g("certificate"),
-                "prefer":           _g("prefer"),
+                "employ_type":      _g("EMPLOY_GB"),
+                "recruit_division": _g("ENT_RECRUIT"),
+                "region":           _g("WORK_PLACE"),
+                "body":             _g("DUTY_DETAIL"),
+                "certificate":      _g("ENT_LICENSE1"),
+                "prefer":           _g("SPECIAL_ITEM"),
                 "status":           status,
-                "pay":              _g("pay"),
+                "pay":              _g("YEARINCOME"),
             })
 
         print(f"  지역정보개발원({sido_nm}): {len(jobs)}건")
