@@ -705,7 +705,8 @@ def common_filter(jobs: list[dict]) -> tuple[list[dict], list[tuple]]:
         region = job.get("region", "")
 
         # ① 상태 (빈 칸이면 패스 — KRIC/Korail은 status 없음)
-        if status and status not in ("Y",) and "접수중" not in status:
+        # "Y"=잡알리오, "접수중"=나라일터/MOEF, "모집중"=KRID
+        if status and status not in ("Y",) and "접수중" not in status and "모집중" not in status:
             rejected.append((job, f"마감·종료: status={status}"))
             continue
 
