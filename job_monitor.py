@@ -17,6 +17,7 @@ import os
 import re
 import smtplib
 import sys
+import time
 import xml.etree.ElementTree as ET
 from datetime import date, datetime, timedelta
 from email.mime.multipart import MIMEMultipart
@@ -64,9 +65,9 @@ GMAIL_PASSWORD = os.environ.get("GMAIL_APP_PASSWORD", "")
 DATAGOKR_API_KEY  = (
     os.environ.get("DATAGOKR_API_KEY") or
     os.environ.get("ALIO_API_KEY", "")
-)
+).strip()
 # 인사혁신처 나라일터 키
-NARAIJARI_API_KEY = os.environ.get("NARAIJARI_API_KEY", "")
+NARAIJARI_API_KEY = os.environ.get("NARAIJARI_API_KEY", "").strip()
 
 SEEN_IDS_FILE = _BASE / "seen_ids.json"
 
@@ -172,9 +173,29 @@ def fetch_krid(api_key: str, sido_cd: str, sido_nm: str) -> tuple[list[dict], li
         return [], []
 
     url = f"{_KRID_URL}?serviceKey={api_key}&sidoCd={sido_cd}&type=xml"
+    print(f"  [DEBUG KRID] url[:80]={url[:80]}")
+
+    resp = None
+    for attempt in range(3):
+        try:
+            resp = requests.get(url, headers=HEADERS, timeout=(30, 120))
+            break
+        except requests.exceptions.Timeout:
+            wait = 2 ** attempt  # 1, 2, 4초
+            if attempt < 2:
+                print(f"  지역정보개발원({sido_nm}): 타임아웃, {wait}초 후 재시도 ({attempt+1}/3)...")
+                time.sleep(wait)
+            else:
+                print(f"  지역정보개발원({sido_nm}): 3회 재시도 후 타임아웃 — 건너뜀")
+                return [], []
+        except Exception as e:
+            logging.warning("KRID(%s) 연결 오류: %s", sido_nm, e)
+            print(f"  지역정보개발원({sido_nm}): 연결 오류 — {e}")
+            return [], []
 
     try:
-        resp = requests.get(url, headers=HEADERS, timeout=20)
+        if resp.status_code != 200:
+            print(f"  [DEBUG KRID] status={resp.status_code} body={resp.text[:300]}")
         resp.raise_for_status()
         root = ET.fromstring(resp.content)
 
@@ -272,23 +293,50 @@ def fetch_moef(api_key: str, max_pages: int = 10) -> tuple[list[dict], dict]:
             f"{_MOEF_URL}?serviceKey={api_key}"
             f"&pageNo={page_no}&numOfRows=100&resultType=json"
         )
+        if page_no == 1:
+            print(f"  [DEBUG MOEF] url[:80]={url[:80]}")
         try:
             resp = requests.get(url, headers=HEADERS, timeout=20)
+            if page_no == 1 and resp.status_code != 200:
+                print(f"  [DEBUG MOEF] status={resp.status_code} body={resp.text[:300]}")
             resp.raise_for_status()
             data = resp.json()
 
-            result_code = str(data.get("resultCode", ""))
-            if result_code not in ("200", "00", "0"):
-                logging.warning("MOEF 오류코드: %s", result_code)
-                break
+            # 공공데이터포털 중첩 구조: {"response": {"header": {...}, "body": {...}}}
+            if "response" in data:
+                header = data["response"].get("header", {})
+                body   = data["response"].get("body", {})
+                result_code = str(header.get("resultCode", ""))
+                if page_no == 1:
+                    print(f"  [DEBUG MOEF] 중첩구조 resultCode={result_code} totalCount={body.get('totalCount')}")
+                if result_code not in ("00", "0", "200"):
+                    logging.warning("MOEF 오류코드(중첩): %s", result_code)
+                    break
+                total_api = int(body.get("totalCount", 0))
+                items = body.get("items") or {}
+                if isinstance(items, dict):
+                    result = items.get("item", [])
+                elif isinstance(items, list):
+                    result = items
+                else:
+                    result = []
+                if isinstance(result, dict):
+                    result = [result]
+            else:
+                # 플랫 구조: {"resultCode": "200", "result": [...]}
+                result_code = str(data.get("resultCode", ""))
+                if page_no == 1:
+                    print(f"  [DEBUG MOEF] 플랫구조 resultCode={result_code} totalCount={data.get('totalCount')}")
+                if result_code not in ("200", "00", "0"):
+                    logging.warning("MOEF 오류코드: %s", result_code)
+                    break
+                result = data.get("result", [])
+                if isinstance(result, dict):
+                    result = [result]
+                total_api = int(data.get("totalCount", 0))
 
-            result = data.get("result", [])
-            if isinstance(result, dict):
-                result = [result]
             if not result:
                 break
-
-            total_api = int(data.get("totalCount", 0))
 
             for item in result:
                 sn = str(item.get("recrutPblntSn") or "")
