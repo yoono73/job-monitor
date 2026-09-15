@@ -171,8 +171,7 @@ def fetch_krid(api_key: str, sido_cd: str, sido_nm: str) -> tuple[list[dict], li
         print(f"  지역정보개발원({sido_nm}): API 키 없음")
         return [], []
 
-    enc_key = _quote(_unquote(api_key), safe="")   # unquote 먼저: 이중인코딩 방지
-    url = f"{_KRID_URL}?serviceKey={enc_key}&sidoCd={sido_cd}&type=xml"
+    url = f"{_KRID_URL}?serviceKey={api_key}&sidoCd={sido_cd}&type=xml"
 
     try:
         resp = requests.get(url, headers=HEADERS, timeout=20)
@@ -261,7 +260,6 @@ def fetch_moef(api_key: str, max_pages: int = 10) -> tuple[list[dict], dict]:
         print("  재정경제부: API 키 없음")
         return [], {}
 
-    enc_key = _quote(_unquote(api_key), safe="")   # unquote 먼저: 이중인코딩 방지
     jobs: list[dict] = []
     seen_sns: set[str] = set()
 
@@ -271,7 +269,7 @@ def fetch_moef(api_key: str, max_pages: int = 10) -> tuple[list[dict], dict]:
 
     for page_no in range(1, max_pages + 1):
         url = (
-            f"{_MOEF_URL}?serviceKey={enc_key}"
+            f"{_MOEF_URL}?serviceKey={api_key}"
             f"&pageNo={page_no}&numOfRows=100&resultType=json"
         )
         try:
@@ -430,6 +428,20 @@ def fetch_naraijari(api_key: str, kwrd_list: list[str]) -> tuple[list[dict], dic
                     except ValueError:
                         pass
 
+                # areacode 숫자코드 → 지역명 변환
+                # 나라일터는 행정구역코드(5자리) 사용: 11=서울, 28=인천, 41=경기, 00000=전국
+                areacode = _g("areacode")
+                if areacode.startswith("11"):
+                    region_nm = "서울"
+                elif areacode.startswith("28"):
+                    region_nm = "인천"
+                elif areacode.startswith("41"):
+                    region_nm = "경기"
+                elif areacode == "00000" or not areacode:
+                    region_nm = ""  # 전국/미지정 → 지역필터 통과
+                else:
+                    region_nm = areacode  # 지방: 필터에서 제외됨
+
                 jobs.append({
                     "id":               job_id,
                     "source":           "나라일터",
@@ -444,7 +456,7 @@ def fetch_naraijari(api_key: str, kwrd_list: list[str]) -> tuple[list[dict], dic
                     "ncs_codes":        "",
                     "employ_type":      "",
                     "recruit_division": "",
-                    "region":           _g("areacode"),
+                    "region":           region_nm,
                     "body":             "",
                     "certificate":      "",
                     "prefer":           "",
