@@ -303,8 +303,9 @@ def fetch_moef(api_key: str, max_pages: int = 10) -> tuple[list[dict], dict]:
             print(f"  [DEBUG MOEF] url[:150]={url[:150]}")
         try:
             resp = requests.get(url, headers=HEADERS, timeout=20)
-            if page_no == 1 and resp.status_code != 200:
-                print(f"  [DEBUG MOEF] status={resp.status_code} body={resp.text[:300]}")
+            if page_no == 1:
+                print(f"  [DEBUG MOEF] status={resp.status_code} content-type={resp.headers.get('Content-Type','?')[:60]}")
+                print(f"  [DEBUG MOEF] body[:200]={resp.text[:200]}")
             resp.raise_for_status()
             data = resp.json()
 
@@ -386,9 +387,11 @@ def fetch_moef(api_key: str, max_pages: int = 10) -> tuple[list[dict], dict]:
 
         except requests.exceptions.HTTPError as e:
             logging.warning("MOEF HTTP 오류 page=%s: %s", page_no, e)
+            print(f"  [DEBUG MOEF] HTTP 오류 page={page_no}: {e}", file=sys.stderr)
             break
         except Exception as e:
             logging.warning("MOEF 오류 page=%s: %s", page_no, e)
+            print(f"  [DEBUG MOEF] 예외 page={page_no}: {type(e).__name__}: {e}", file=sys.stderr)
             break
 
     # 정렬방향 감지
@@ -576,7 +579,7 @@ def fetch_kric() -> list[dict]:
                     "https://www.kric.go.kr/jsp/employment/org/"
                     f"recruitDetail.jsp?board_seq={board_seq}"
                 ),
-                "field":            "정보통신",  # KRIC는 IT/교통 전문 포털
+                "field":            "",  # 키워드 매칭으로만 판정
                 "ncs_codes":        "",
                 "employ_type":      "",
                 "recruit_division": "",
@@ -632,7 +635,7 @@ def fetch_korail() -> list[dict]:
                 "inst_type":        "",
                 "deadline":         deadline,
                 "url":              full_url,
-                "field":            "정보통신",  # 코레일은 트랙A 우선 출처
+                "field":            "",  # 키워드 매칭으로만 판정
                 "ncs_codes":        "",
                 "employ_type":      "",
                 "recruit_division": "",
