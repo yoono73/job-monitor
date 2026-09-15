@@ -1021,15 +1021,16 @@ def send_email(
     html: str, subject: str,
     to_list: list[str], to_header: str,
     preview_filename: str = "report_preview.html",
-):
+) -> bool:
+    """발송 성공 True, 실패 False 반환 (미설정·수신자없음은 True 취급)"""
     if not GMAIL_USER or not GMAIL_PASSWORD:
         out_path = _BASE / preview_filename
         print(f"\n[이메일 미설정] 미리보기 저장: {out_path}")
         out_path.write_text(html, encoding="utf-8")
-        return
+        return True
     if not to_list:
         print(f"  [건너뜀] 수신자 없음: {subject}")
-        return
+        return True
 
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
@@ -1042,9 +1043,11 @@ def send_email(
             server.login(GMAIL_USER, GMAIL_PASSWORD)
             server.sendmail(GMAIL_USER, to_list, msg.as_string())
         print(f"✉️  발송 완료 → {to_header}")
+        return True
     except Exception as e:
         logging.warning("이메일 발송 실패: %s", e)
         print(f"이메일 발송 실패: {e}", file=sys.stderr)
+        return False
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1156,12 +1159,10 @@ def main():
     n_filtered = write_filtered_log(rejected, date_str)
     print(f"  → logs/filtered_{date_str}.log ({n_filtered}건)")
 
-    # ── seen_ids 갱신 ────────────────────────────────────────────────────
-    seen.update(j["id"] for j in new_jobs)
-    save_seen(seen)
-
     # ── 이메일 발송 ───────────────────────────────────────────────────────
     print("\n【발송】")
+    send_ok_a = True   # 매칭 없으면 기본 True (저장 OK)
+    send_ok_b = True
 
     # 트랙A (본인 — 전산·통신직)
     if matched_a:
@@ -1171,8 +1172,8 @@ def main():
             f"[채용] {now.strftime('%m/%d')} 전산/통신 신규 {len(matched_a)}건"
             + (f" ⚡D↓{urgent_cnt}건" if urgent_cnt else "")
         )
-        send_email(html_a, subj_a, EMAIL_TO_LIST, EMAIL_TO,
-                   preview_filename="report_preview_tech.html")
+        send_ok_a = send_email(html_a, subj_a, EMAIL_TO_LIST, EMAIL_TO,
+                               preview_filename="report_preview_tech.html")
     else:
         print("  트랙A 매칭 없음 — 발송 건너뜀")
 
@@ -1185,14 +1186,22 @@ def main():
             + (f" ⚡D↓{urgent_cnt_b}건" if urgent_cnt_b else "")
         )
         if EMAIL_TO_ADMIN_LIST:
-            send_email(html_b, subj_b, EMAIL_TO_ADMIN_LIST, EMAIL_TO_ADMIN,
-                       preview_filename="report_preview_admin.html")
+            send_ok_b = send_email(html_b, subj_b, EMAIL_TO_ADMIN_LIST, EMAIL_TO_ADMIN,
+                                   preview_filename="report_preview_admin.html")
         else:
             out_path = _BASE / "report_preview_admin.html"
             print(f"  트랙B: 동료 이메일 미설정 — preview 저장: {out_path}")
             out_path.write_text(html_b, encoding="utf-8")
     else:
         print("  트랙B 매칭 없음 — 발송 건너뜀")
+
+    # ── seen_ids 갱신 — 발송 성공(또는 매칭 0건)일 때만 저장 ────────────
+    if send_ok_a and send_ok_b:
+        seen.update(j["id"] for j in new_jobs)
+        save_seen(seen)
+    else:
+        logging.error("이메일 발송 실패 — seen_ids 미갱신 (다음 실행에서 재시도)")
+        print("⚠️  발송 실패 — seen_ids 미갱신, 다음 실행에서 재시도", file=sys.stderr)
 
     # ── 실행 로그 출력 ────────────────────────────────────────────────────
     print(f"""
