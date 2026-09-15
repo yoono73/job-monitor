@@ -206,7 +206,7 @@ def fetch_krid(api_key: str, sido_cd: str, sido_nm: str) -> tuple[list[dict], li
         # 응답 코드 확인
         result_code = root.findtext(".//resultCode") or ""
         result_msg  = root.findtext(".//resultMsg") or ""
-        if result_code and result_code not in ("00", "0000", ""):
+        if result_code and result_code not in ("0", "00", "0000", ""):
             logging.warning("KRID(%s) 오류코드: %s %s", sido_nm, result_code, result_msg)
             print(f"  지역정보개발원({sido_nm}): 오류코드 {result_code} {result_msg}")
             return [], []
