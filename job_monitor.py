@@ -1073,18 +1073,22 @@ def main():
     stats: dict = {}
 
     # ① 지역정보개발원 (서울·인천·경기)
+    # SKIP_KRID=1 환경변수: GitHub Actions(해외IP) 등 타임아웃 환경에서 건너뜀
     krid_total = 0
     krid_fields: list[str] = []
-    for sido_nm, sido_cd in SIDO_CODES.items():
-        try:
-            jobs_s, fields = fetch_krid(DATAGOKR_API_KEY, sido_cd, sido_nm)
-        except Exception as e:
-            logging.warning("KRID(%s) 예외: %s", sido_nm, e)
-            jobs_s, fields = [], []
-        all_jobs += jobs_s
-        krid_total += len(jobs_s)
-        if not krid_fields and fields:
-            krid_fields = fields
+    if os.environ.get("SKIP_KRID", "").strip() == "1":
+        print("  [SKIP_KRID=1] 지역정보개발원 수집 건너뜀 (해외IP 차단)")
+    else:
+        for sido_nm, sido_cd in SIDO_CODES.items():
+            try:
+                jobs_s, fields = fetch_krid(DATAGOKR_API_KEY, sido_cd, sido_nm)
+            except Exception as e:
+                logging.warning("KRID(%s) 예외: %s", sido_nm, e)
+                jobs_s, fields = [], []
+            all_jobs += jobs_s
+            krid_total += len(jobs_s)
+            if not krid_fields and fields:
+                krid_fields = fields
     stats["krid"] = {"collected": krid_total, "actual_fields": krid_fields}
 
     # ② 재정경제부
