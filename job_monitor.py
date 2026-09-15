@@ -174,21 +174,23 @@ def fetch_krid(api_key: str, sido_cd: str, sido_nm: str) -> tuple[list[dict], li
         print(f"  지역정보개발원({sido_nm}): API 키 없음")
         return [], []
 
-    url = f"{_KRID_URL}?serviceKey={api_key}&sidoCd={sido_cd}&type=xml"
-    print(f"  [DEBUG KRID] url[:80]={url[:80]}")
+    enc_key = _quote(_unquote(api_key), safe="")   # + → %2B, = → %3D (나라일터와 동일 방식)
+    url = f"{_KRID_URL}?serviceKey={enc_key}&sidoCd={sido_cd}&type=xml"
+    print(f"  [DEBUG KRID] url[:120]={url[:120]}")
 
     resp = None
-    for attempt in range(3):
+    _retry_delays = [10, 30]  # 1차 실패→10초, 2차 실패→30초 대기
+    for attempt in range(len(_retry_delays) + 1):  # 총 3회 시도
         try:
-            resp = requests.get(url, headers=HEADERS, timeout=(30, 120))
+            resp = requests.get(url, headers=HEADERS, timeout=(30, 180))
             break
         except requests.exceptions.Timeout:
-            wait = 2 ** attempt  # 1, 2, 4초
-            if attempt < 2:
-                print(f"  지역정보개발원({sido_nm}): 타임아웃, {wait}초 후 재시도 ({attempt+1}/3)...")
+            if attempt < len(_retry_delays):
+                wait = _retry_delays[attempt]
+                print(f"  지역정보개발원({sido_nm}): 타임아웃, {wait}초 후 재시도 ({attempt+1}/{len(_retry_delays)+1})...")
                 time.sleep(wait)
             else:
-                print(f"  지역정보개발원({sido_nm}): 3회 재시도 후 타임아웃 — 건너뜀")
+                print(f"  지역정보개발원({sido_nm}): {len(_retry_delays)+1}회 시도 후 타임아웃 — 건너뜀")
                 return [], []
         except Exception as e:
             logging.warning("KRID(%s) 연결 오류: %s", sido_nm, e)
@@ -290,13 +292,14 @@ def fetch_moef(api_key: str, max_pages: int = 10) -> tuple[list[dict], dict]:
     total_api = 0
     page_no = 0  # NameError 방어 — 루프가 한 번도 실행되지 않는 경우 대비
 
+    enc_key = _quote(_unquote(api_key), safe="")   # + → %2B, = → %3D (나라일터와 동일 방식)
     for page_no in range(1, max_pages + 1):
         url = (
-            f"{_MOEF_URL}?serviceKey={api_key}"
+            f"{_MOEF_URL}?serviceKey={enc_key}"
             f"&pageNo={page_no}&numOfRows=100&resultType=json"
         )
         if page_no == 1:
-            print(f"  [DEBUG MOEF] url[:80]={url[:80]}")
+            print(f"  [DEBUG MOEF] url[:150]={url[:150]}")
         try:
             resp = requests.get(url, headers=HEADERS, timeout=20)
             if page_no == 1 and resp.status_code != 200:
