@@ -60,14 +60,16 @@ EMAIL_TO_ADMIN      = ", ".join(EMAIL_TO_ADMIN_LIST)
 GMAIL_USER     = os.environ.get("GMAIL_USER", "")
 GMAIL_PASSWORD = os.environ.get("GMAIL_APP_PASSWORD", "")
 
-# data.go.kr 공용 API 키 (지역정보개발원·재정경제부 공유)
-# DATAGOKR_API_KEY 가 없으면 기존 ALIO_API_KEY 사용
+# 인사혁신처 나라일터 키 (data.go.kr 동일 계정 — KRID·MOEF 공용 가능)
+NARAIJARI_API_KEY = os.environ.get("NARAIJARI_API_KEY", "").strip()
+
+# data.go.kr 공용 API 키 (지역정보개발원·재정경제부)
+# 우선순위: DATAGOKR_API_KEY → NARAIJARI_API_KEY (같은 계정) → ALIO_API_KEY (구키, 폴백)
 DATAGOKR_API_KEY  = (
     os.environ.get("DATAGOKR_API_KEY") or
+    NARAIJARI_API_KEY or
     os.environ.get("ALIO_API_KEY", "")
 ).strip()
-# 인사혁신처 나라일터 키
-NARAIJARI_API_KEY = os.environ.get("NARAIJARI_API_KEY", "").strip()
 
 SEEN_IDS_FILE = _BASE / "seen_ids.json"
 
