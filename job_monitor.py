@@ -249,7 +249,7 @@ def fetch_krid(api_key: str, sido_cd: str, sido_nm: str) -> tuple[list[dict], li
                 "ncs_codes":        "",
                 "employ_type":      _g("EMPLOY_GB"),
                 "recruit_division": _g("ENT_RECRUIT"),
-                "region":           _g("WORK_PLACE"),
+                "region":           sido_nm,  # sidoCd로 이미 지역 지정하여 호출 — API 반환값 무시
                 "body":             _g("DUTY_DETAIL"),
                 "certificate":      _g("ENT_LICENSE1"),
                 "prefer":           _g("SPECIAL_ITEM"),
@@ -706,6 +706,9 @@ def common_filter(jobs: list[dict]) -> tuple[list[dict], list[tuple]]:
         employ = job.get("employ_type", "")
         div    = job.get("recruit_division", "")
         region = job.get("region", "")
+        # "null" / "NULL" 문자열 정규화 → 빈 문자열로 처리 (필터 통과)
+        if region and region.strip().lower() == "null":
+            region = ""
 
         # ① 상태 (빈 칸이면 패스 — KRIC/Korail은 status 없음)
         # "Y"=잡알리오, "접수중"=나라일터/MOEF, "모집중"=KRID
