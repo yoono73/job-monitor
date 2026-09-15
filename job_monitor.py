@@ -1,141 +1,115 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-채용공고 자동 모니터링 — job_monitor.py
-실행: GitHub Actions 매일 KST 07:00 (UTC 22:00 전날)
-로컬 테스트: python job_monitor.py
+채용공고 자동 모니터링 v2 — job_monitor.py
+수집원: ① 한국지역정보개발원 (지방공기업·출자출연)
+        ② 재정경제부 (중앙 공공기관 113,852건)
+        ③ 인사혁신처 나라일터 (보조)
+        ④ 철도산업정보센터 / ⑤ 한국철도공사 (보조 크롤러)
+설정: keywords.json, sido_codes.json (코드 수정 없이 튜닝 가능)
+실행: GitHub Actions 매일 KST 07:00 / 로컬: python job_monitor.py
 """
 
-import os
+import hashlib
 import json
+import logging
+import os
 import re
 import smtplib
 import sys
-from datetime import datetime, date, timedelta
+import xml.etree.ElementTree as ET
+from datetime import date, datetime, timedelta
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from pathlib import Path
+from urllib.parse import quote as _quote, unquote as _unquote
 
 import requests
 from bs4 import BeautifulSoup
 
-# ═══════════════════════════════════════════
-# 환경변수 (GitHub Actions Secrets에서 주입)
-# ═══════════════════════════════════════════
+# ── 경고 로그 파일 ──────────────────────────────────────────────────────────
+_BASE = Path(__file__).parent
+_LOG_DIR = _BASE / "logs"
+_LOG_DIR.mkdir(exist_ok=True)
+logging.basicConfig(
+    filename=str(_LOG_DIR / "warn.log"),
+    level=logging.WARNING,
+    format="%(asctime)s %(levelname)s %(message)s",
+    encoding="utf-8",
+)
+
+# ── .env 자동 로드 (로컬 실행 시) ───────────────────────────────────────────
+_env_file = _BASE / ".env"
+if _env_file.exists():
+    for _line in _env_file.read_text(encoding="utf-8").splitlines():
+        _line = _line.strip()
+        if _line and not _line.startswith("#") and "=" in _line:
+            _k, _, _v = _line.partition("=")
+            os.environ.setdefault(_k.strip(), _v.strip())
+
+# ── 환경변수 ────────────────────────────────────────────────────────────────
 _EMAIL_TO_RAW       = os.environ.get("EMAIL_TO", "yoono73@gmail.com")
-_EMAIL_TO_ADMIN_RAW = os.environ.get("EMAIL_TO_ADMIN", "")   # 동료 이메일 (행정직 전용)
+_EMAIL_TO_ADMIN_RAW = os.environ.get("EMAIL_TO_ADMIN", "")
 
 EMAIL_TO_LIST       = [e.strip() for e in _EMAIL_TO_RAW.split(",") if e.strip()]
 EMAIL_TO_ADMIN_LIST = [e.strip() for e in _EMAIL_TO_ADMIN_RAW.split(",") if e.strip()]
+EMAIL_TO            = ", ".join(EMAIL_TO_LIST)
+EMAIL_TO_ADMIN      = ", ".join(EMAIL_TO_ADMIN_LIST)
 
-EMAIL_TO       = ", ".join(EMAIL_TO_LIST)
-EMAIL_TO_ADMIN = ", ".join(EMAIL_TO_ADMIN_LIST)
+GMAIL_USER     = os.environ.get("GMAIL_USER", "")
+GMAIL_PASSWORD = os.environ.get("GMAIL_APP_PASSWORD", "")
 
-GMAIL_USER      = os.environ.get("GMAIL_USER",         "")
-GMAIL_PASSWORD  = os.environ.get("GMAIL_APP_PASSWORD", "")
-ALIO_API_KEY    = os.environ.get("ALIO_API_KEY",       "")
+# data.go.kr 공용 API 키 (지역정보개발원·재정경제부 공유)
+# DATAGOKR_API_KEY 가 없으면 기존 ALIO_API_KEY 사용
+DATAGOKR_API_KEY  = (
+    os.environ.get("DATAGOKR_API_KEY") or
+    os.environ.get("ALIO_API_KEY", "")
+)
+# 인사혁신처 나라일터 키
+NARAIJARI_API_KEY = os.environ.get("NARAIJARI_API_KEY", "")
 
-SEEN_IDS_FILE   = Path("seen_ids.json")
-
-# ═══════════════════════════════════════════
-# 매칭 설정 — 본인 (전산/통신직)
-# ═══════════════════════════════════════════
-KEYWORDS = {
-    "AFC":        5,
-    "자동요금":   5,
-    "LTE-R":      5,
-    "LTE_R":      4,
-    "철도통신":   4,
-    "통신직":     3,
-    "전산직":     3,
-    "정보통신":   3,
-    "SDH":        3,
-    "광전송":     3,
-    "관제시스템": 2,
-    "정보시스템": 2,
-    "네트워크":   2,
-    "보안":       1,
-    "통신":       1,
-}
-
-TARGET_ORGS = {
-    "한국철도공사": 5,
-    "코레일":       5,
-    "국가철도공단": 5,
-    "서울교통공사": 5,
-    "인천교통공사": 4,
-    "경기교통공사": 4,
-    "수서고속철도": 3,
-    "SR":           3,
-    "위례트램":         3,
-    "신림선도시철도":   3,
-    "동북선도시철도":   3,
-    "서울시메트로9호선": 3,
-    "GTX":              3,
-    "김포골드라인":     2,
-    "의정부경전철":     2,
-    "용인에버라인":     2,
-    "한국교통안전공단": 2,
-    "서울시설공단":     2,
-    "한국스마트카드":   2,
-    "한국철도기술연구원": 2,
-    "한국전자통신연구원": 1,
-    "한국지능정보사회진흥원": 1,
-    "한국인터넷진흥원": 1,
-    "한국공항공사":     2,
-    "인천국제공항":     2,
-    "부산교통공사":     2,
-    "대구교통공사":     2,
-    "광주교통공사":     2,
-    "대전교통공사":     2,
-    "서울도시철도":     2,
-    "한국도로공사":     1,
-    "한국전력공사":     1,
-    "한국수자원공사":   1,
-    "한국토지주택공사": 1,
-}
-
-MIN_SCORE = 1   # 이 점수 이상만 리포트에 포함
-
-# ═══════════════════════════════════════════
-# 매칭 설정 — 동료 (행정직: 계약/예산/회계/재무)
-# ═══════════════════════════════════════════
-ADMIN_KEYWORDS = {
-    # 핵심 — 직무명이 포함된 경우
-    "계약":     5,   # 계약 담당, 계약관리
-    "예산":     5,   # 예산관리, 예산기획
-    "회계":     5,   # 회계담당, 재무회계
-    "재무":     5,   # 재무팀, 재무관리
-    "조달":     4,   # 조달관리, 구매조달
-    "경리":     4,   # 경리담당
-    "원가":     3,   # 원가관리
-    "세무":     3,   # 세무관리
-    "내부감사": 3,
-    "감사":     2,
-    "기획":     2,
-    "행정":     2,
-    "총무":     2,
-    "인사":     1,
-    "경영":     1,
-}
-
-# TARGET_ORGS는 두 사람 공통 사용
-# 동료는 키워드 점수만으로 필터 (기관명 구분 없이 공공기관 전체)
-MIN_ADMIN_SCORE = 3  # 행정직은 기준 높게 (잡음 제거)
+SEEN_IDS_FILE = _BASE / "seen_ids.json"
 
 URGENT_DAYS = 7
 
-# ═══════════════════════════════════════════
-# 유틸리티
-# ═══════════════════════════════════════════
+# ── 설정 파일 로드 ───────────────────────────────────────────────────────────
+def _load_json(filename: str, default):
+    path = _BASE / filename
+    if path.exists():
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except Exception as e:
+            logging.warning("%s 로드 실패: %s", filename, e)
+    return default
+
+KW = _load_json("keywords.json", {
+    "track_a": {"ncs_auto": ["R600020"], "ncs_keyword": ["R600001", "R600002"],
+                "field": ["정보통신"], "include": ["전산", "정보통신", "보안", "IT"],
+                "exclude": []},
+    "track_b": {"ncs": ["R600002", "R600001"], "field": ["사무", "행정"],
+                "include": ["행정", "예산", "회계", "계약"], "exclude": []},
+    "common": {"region": ["서울", "경기", "인천"], "employ_include": ["정규직", "무기계약직"],
+               "title_exclude": ["청년인턴", "인턴"]},
+    "naraijari_kwrd": ["전산", "정보통신", "보안", "IT"],
+})
+
+SIDO_CODES = _load_json("sido_codes.json", {
+    "서울특별시": "007001", "인천광역시": "007004", "경기도": "007008",
+})
+
+# ── HTTP 헤더 ───────────────────────────────────────────────────────────────
 HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/120.0.0.0 Safari/537.36"
+        "Chrome/124.0.0.0 Safari/537.36"
     ),
     "Accept-Language": "ko-KR,ko;q=0.9",
 }
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 유틸리티
+# ══════════════════════════════════════════════════════════════════════════════
 
 def load_seen() -> set:
     if SEEN_IDS_FILE.exists():
@@ -146,42 +120,351 @@ def load_seen() -> set:
             return set()
     return set()
 
+
 def save_seen(seen: set):
     SEEN_IDS_FILE.write_text(
         json.dumps(sorted(seen), ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
 
-def score_job(title: str, org: str) -> int:
-    s = sum(w for k, w in KEYWORDS.items() if k in title)
-    s += sum(w for k, w in TARGET_ORGS.items() if k in org)
-    return s
-
-def score_admin(title: str, org: str) -> int:
-    """행정직 점수: 직무 키워드만 (기관명 보너스 없음 — 전체 공공기관 대상)"""
-    return sum(w for k, w in ADMIN_KEYWORDS.items() if k in title or k in org)
-
-def grade(score: int) -> str:
-    if score >= 7:
-        return "상"
-    if score >= 3:
-        return "중"
-    return "하"
 
 def days_left(deadline_str: str) -> int | None:
     if not deadline_str:
         return None
     for fmt in ("%Y.%m.%d", "%Y-%m-%d", "%Y%m%d"):
         try:
-            d = datetime.strptime(deadline_str.strip()[:10], fmt).date()
+            d = datetime.strptime(str(deadline_str).strip()[:10], fmt).date()
             return (d - date.today()).days
         except ValueError:
             continue
     return None
 
-# ═══════════════════════════════════════════
-# 크롤러 1: 철도산업정보센터
-# ═══════════════════════════════════════════
+
+def grade(matched_count: int) -> str:
+    if matched_count >= 3:
+        return "상"
+    if matched_count >= 1:
+        return "중"
+    return "하"
+
+
+def _job_hash(job: dict) -> str:
+    """기관명+제목 조합 해시 — 서로 다른 API가 같은 공고를 제공하는 경우 중복 제거"""
+    key = (job.get("org", "") + "|" + job.get("title", "")).strip()
+    return hashlib.md5(key.encode("utf-8")).hexdigest()[:12]
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 수집 ①  한국지역정보개발원 API — 지방공기업·출자출연기관
+# ══════════════════════════════════════════════════════════════════════════════
+
+_KRID_URL = (
+    "https://apis.data.go.kr/B551982/openApiEmployInfo/openXmlEmployInfo"
+)
+
+def fetch_krid(api_key: str, sido_cd: str, sido_nm: str) -> tuple[list[dict], list[str]]:
+    """
+    한국지역정보개발원 지방공기업 채용 API 호출
+    Returns: (jobs, actual_field_names_from_first_item)
+    """
+    if not api_key:
+        print(f"  지역정보개발원({sido_nm}): API 키 없음")
+        return [], []
+
+    enc_key = _quote(_unquote(api_key), safe="")   # unquote 먼저: 이중인코딩 방지
+    url = f"{_KRID_URL}?serviceKey={enc_key}&sidoCd={sido_cd}&type=xml"
+
+    try:
+        resp = requests.get(url, headers=HEADERS, timeout=20)
+        resp.raise_for_status()
+        root = ET.fromstring(resp.content)
+
+        # 응답 코드 확인
+        result_code = root.findtext(".//resultCode") or ""
+        result_msg  = root.findtext(".//resultMsg") or ""
+        if result_code and result_code not in ("00", "0000", ""):
+            logging.warning("KRID(%s) 오류코드: %s %s", sido_nm, result_code, result_msg)
+            print(f"  지역정보개발원({sido_nm}): 오류코드 {result_code} {result_msg}")
+            return [], []
+
+        items = root.findall(".//item")
+        if not items:
+            print(f"  지역정보개발원({sido_nm}): 0건")
+            return [], []
+
+        # 첫 항목에서 실제 필드명 추출 (완료보고용)
+        actual_fields = [child.tag for child in items[0]] if items else []
+
+        jobs = []
+        for item in items:
+            _g = lambda tag, _item=item: (_item.findtext(tag) or "").strip()
+
+            no    = _g("no")
+            title = _g("title")
+            if not title:
+                continue
+
+            job_id = f"krid_{no}" if no else f"krid_{abs(hash(title + _g('instNm')))}"
+
+            # recruitStatus: "접수중" | "마감" 등
+            status = _g("recruitStatus")
+            if status and "마감" in status:
+                continue
+
+            jobs.append({
+                "id":               job_id,
+                "source":           "지역정보개발원",
+                "source_type":      f"지방공기업({sido_nm})",
+                "title":            title,
+                "org":              _g("instNm"),
+                "inst_type":        _g("instType"),    # 지방공기업 | 출자출연기관
+                "deadline":         _g("receiptClose"),
+                "url":              _g("linkUrl") or "https://job.cleaneye.go.kr",
+                "field":            _g("recruitField"),
+                "ncs_codes":        "",
+                "employ_type":      _g("employType"),
+                "recruit_division": _g("recruitDivision"),
+                "region":           _g("workPlace"),
+                "body":             _g("jobDetail"),
+                "certificate":      _g("certificate"),
+                "prefer":           _g("prefer"),
+                "status":           status,
+                "pay":              _g("pay"),
+            })
+
+        print(f"  지역정보개발원({sido_nm}): {len(jobs)}건")
+        return jobs, actual_fields
+
+    except ET.ParseError as e:
+        logging.warning("KRID(%s) XML 파싱 오류: %s", sido_nm, e)
+        print(f"  지역정보개발원({sido_nm}): XML 파싱 오류 — {e}")
+        return [], []
+    except Exception as e:
+        logging.warning("KRID(%s) 오류: %s", sido_nm, e)
+        print(f"  지역정보개발원({sido_nm}): 오류 — {e}")
+        return [], []
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 수집 ②  재정경제부 API — 중앙 공공기관
+# ══════════════════════════════════════════════════════════════════════════════
+
+_MOEF_URL = "https://apis.data.go.kr/1051000/recruitment/list"
+
+def fetch_moef(api_key: str, max_pages: int = 10) -> tuple[list[dict], dict]:
+    """
+    재정경제부 공공기관 채용 API (JSON)
+    max_pages: 최대 페이지 수 (100건/페이지 → 1,000건 한도)
+    Returns: (jobs, stats_dict)
+    """
+    if not api_key:
+        print("  재정경제부: API 키 없음")
+        return [], {}
+
+    enc_key = _quote(_unquote(api_key), safe="")   # unquote 먼저: 이중인코딩 방지
+    jobs: list[dict] = []
+    seen_sns: set[str] = set()
+
+    first_sns: list[str] = []   # 정렬방향 확인용
+    total_api = 0
+    page_no = 0  # NameError 방어 — 루프가 한 번도 실행되지 않는 경우 대비
+
+    for page_no in range(1, max_pages + 1):
+        url = (
+            f"{_MOEF_URL}?serviceKey={enc_key}"
+            f"&pageNo={page_no}&numOfRows=100&resultType=json"
+        )
+        try:
+            resp = requests.get(url, headers=HEADERS, timeout=20)
+            resp.raise_for_status()
+            data = resp.json()
+
+            result_code = str(data.get("resultCode", ""))
+            if result_code not in ("200", "00", "0"):
+                logging.warning("MOEF 오류코드: %s", result_code)
+                break
+
+            result = data.get("result", [])
+            if isinstance(result, dict):
+                result = [result]
+            if not result:
+                break
+
+            total_api = int(data.get("totalCount", 0))
+
+            for item in result:
+                sn = str(item.get("recrutPblntSn") or "")
+                if not sn or sn in seen_sns:
+                    continue
+                seen_sns.add(sn)
+
+                # 정렬방향 확인용: 처음 5개 SN 기록
+                if len(first_sns) < 5:
+                    first_sns.append(sn)
+
+                # 진행중 필터
+                if item.get("ongoingYn", "Y") != "Y":
+                    continue
+
+                title = item.get("recrutPbancTtl") or ""
+                if not title:
+                    continue
+
+                jobs.append({
+                    "id":               f"moef_{sn}",
+                    "source":           "재정경제부",
+                    "source_type":      "중앙공공기관",
+                    "title":            title,
+                    "org":              item.get("instNm") or "",
+                    "inst_type":        "",
+                    "deadline":         item.get("pbancEndYmd") or "",
+                    "url":              item.get("srcUrl") or f"https://job.alio.go.kr/recruitview.do?pbancNo={sn}",
+                    "field":            item.get("ncsCdNmLst") or "",
+                    "ncs_codes":        item.get("ncsCdLst") or "",
+                    "employ_type":      item.get("hireTypeNmLst") or "",
+                    "recruit_division": item.get("recrutSeNm") or "",
+                    "region":           item.get("workRgnNmLst") or "",
+                    "body":             item.get("aplyQlfcCn") or "",
+                    "certificate":      "",
+                    "prefer":           "",
+                    "status":           "Y" if item.get("ongoingYn") == "Y" else "",
+                    "pay":              "",
+                    "decimal_day":      str(item.get("decimalDay") or ""),
+                })
+
+        except requests.exceptions.HTTPError as e:
+            logging.warning("MOEF HTTP 오류 page=%s: %s", page_no, e)
+            break
+        except Exception as e:
+            logging.warning("MOEF 오류 page=%s: %s", page_no, e)
+            break
+
+    # 정렬방향 감지
+    try:
+        sns_int = [int(s) for s in first_sns if s.isdigit()]
+        if len(sns_int) >= 2:
+            sort_direction = "내림차순(최신순)" if sns_int[0] > sns_int[1] else "오름차순(오래된순)"
+        else:
+            sort_direction = "확인불가"
+    except Exception:
+        sort_direction = "확인불가"
+
+    stats = {
+        "collected": len(jobs),
+        "total_api": total_api,
+        "pages_fetched": min(page_no, max_pages),
+        "traffic_used": f"{min(page_no, max_pages) * 100}/{min(total_api, 1000)}",
+        "sort_direction": sort_direction,
+        "first_sns": first_sns,
+    }
+
+    print(f"  재정경제부: {len(jobs)}건 (API 총계 {total_api}건, {sort_direction})")
+    return jobs, stats
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 수집 ③  인사혁신처 API (나라일터) — 키워드별 반복 호출
+# ══════════════════════════════════════════════════════════════════════════════
+
+_NARA_URL = "https://apis.data.go.kr/1760000/PblJobService/getList"
+
+def fetch_naraijari(api_key: str, kwrd_list: list[str]) -> tuple[list[dict], dict]:
+    """
+    인사혁신처 공공취업정보 API — 키워드별 반복 호출
+    Returns: (jobs, stats_dict)
+    """
+    if not api_key:
+        print("  나라일터: API 키 없음")
+        return [], {}
+
+    enc_key    = _quote(_unquote(api_key), safe="")   # unquote 먼저: 이중인코딩 방지
+    today      = date.today()
+    begin_de   = (today - timedelta(days=7)).strftime("%Y%m%d")  # API 요구: yyyymmdd
+    end_de     = today.strftime("%Y%m%d")
+
+    jobs: list[dict] = []
+    seen_ids: set[str] = set()
+    call_count = 0
+
+    # Sort_order 감지: 1(오름차순) or 2(내림차순) 중 최신순 확인
+    sort_order = "2"   # 기본값 내림차순 시도
+
+    for kwrd in kwrd_list:
+        url = (
+            f"{_NARA_URL}?serviceKey={enc_key}"
+            f"&pageNo=1&numOfRows=100"
+            f"&Kwrd={_quote(kwrd, safe='')}"
+            f"&Begin_de={begin_de}&End_de={end_de}"
+            f"&Sort_order={sort_order}"
+            f"&type=xml"
+        )
+        call_count += 1
+        try:
+            resp = requests.get(url, headers=HEADERS, timeout=8)
+            resp.raise_for_status()
+            root = ET.fromstring(resp.content)
+
+            result_code = root.findtext(".//resultCode") or ""
+            if result_code and result_code not in ("00", "0000", ""):
+                logging.warning("나라일터(%s) 오류: %s", kwrd, result_code)
+                continue
+
+            for item in root.findall(".//item"):
+                _g = lambda tag, _item=item: (_item.findtext(tag) or "").strip()
+
+                idx = _g("idx")
+                if not idx:
+                    continue
+                job_id = f"naraijari_{idx}"
+                if job_id in seen_ids:
+                    continue
+                seen_ids.add(job_id)
+
+                # 마감일 기준 필터
+                enddate_raw = _g("enddate")  # yyyymmdd
+                if enddate_raw:
+                    try:
+                        enddate = datetime.strptime(enddate_raw[:8], "%Y%m%d").date()
+                        if enddate < today:
+                            continue
+                    except ValueError:
+                        pass
+
+                jobs.append({
+                    "id":               job_id,
+                    "source":           "나라일터",
+                    "source_type":      "나라일터",
+                    "title":            _g("title"),
+                    "org":              _g("insttname"),
+                    "inst_type":        _g("type02"),
+                    "deadline":         enddate_raw[:4]+"-"+enddate_raw[4:6]+"-"+enddate_raw[6:8]
+                                        if len(enddate_raw) >= 8 else "",
+                    "url":              f"https://www.gojobs.go.kr/recruit/recruitnoticeDetail.do?seq={idx}",
+                    "field":            "",
+                    "ncs_codes":        "",
+                    "employ_type":      "",
+                    "recruit_division": "",
+                    "region":           _g("areacode"),
+                    "body":             "",
+                    "certificate":      "",
+                    "prefer":           "",
+                    "status":           "",
+                    "pay":              "",
+                })
+
+        except Exception as e:
+            logging.warning("나라일터(%s) 오류: %s", kwrd, e)
+            continue
+
+    stats = {"collected": len(jobs), "calls": call_count, "sort_order": sort_order}
+    print(f"  나라일터: {len(jobs)}건 ({call_count}회 호출, Sort_order={sort_order})")
+    return jobs, stats
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 수집 ④  철도산업정보센터 크롤러 (보조)
+# ══════════════════════════════════════════════════════════════════════════════
+
 def fetch_kric() -> list[dict]:
     jobs = []
     url = (
@@ -194,7 +477,7 @@ def fetch_kric() -> list[dict]:
         soup = BeautifulSoup(resp.text, "html.parser")
         table = soup.find("table")
         if not table:
-            print("  kric: 테이블 미발견")
+            print("  KRIC: 테이블 미발견")
             return []
         tbody = table.find("tbody") or table
         for row in tbody.find_all("tr"):
@@ -216,157 +499,39 @@ def fetch_kric() -> list[dict]:
             if "마감" in status and "진행" not in status:
                 continue
             jobs.append({
-                "id":       f"kric_{board_seq}",
-                "source":   "철도산업정보센터",
-                "title":    title,
-                "org":      org,
-                "deadline": deadline,
+                "id":               f"kric_{board_seq}",
+                "source":           "철도산업정보센터",
+                "source_type":      "철도산업정보센터",
+                "title":            title,
+                "org":              org,
+                "inst_type":        "",
+                "deadline":         deadline,
                 "url": (
-                    "https://www.kric.go.kr/jsp/emplovment/org/"
+                    "https://www.kric.go.kr/jsp/employment/org/"
                     f"recruitDetail.jsp?board_seq={board_seq}"
                 ),
+                "field":            "정보통신",  # KRIC는 IT/교통 전문 포털
+                "ncs_codes":        "",
+                "employ_type":      "",
+                "recruit_division": "",
+                "region":           "",
+                "body":             "",
+                "certificate":      "",
+                "prefer":           "",
+                "status":           "",
+                "pay":              "",
             })
-        print(f"  kric: {len(jobs)}건 수집")
+        print(f"  KRIC: {len(jobs)}건")
     except Exception as e:
-        print(f"  kric 오류: {e}")
-    return jobs
-
-# ═══════════════════════════════════════════
-# 크롤러 2: 잡알리오 Open API
-# ═══════════════════════════════════════════
-def fetch_alio_api() -> list[dict]:
-    if not ALIO_API_KEY:
-        print("  잡알리오 API: 키 미설정 (건너뜀)")
-        return []
-    jobs = []
-    url = "https://apis.data.go.kr/B552468/AlioInnoJob/getJobInfo"
-    params = {
-        "serviceKey": ALIO_API_KEY,
-        "numOfRows":  100,
-        "pageNo":     1,
-        "returnType": "json",
-    }
-    try:
-        resp = requests.get(url, params=params, headers=HEADERS, timeout=20)
-        resp.raise_for_status()
-        data = resp.json()
-        items = (
-            data.get("response", {})
-                .get("body", {})
-                .get("items", {})
-                .get("item", [])
-        )
-        if isinstance(items, dict):
-            items = [items]
-        for item in items:
-            job_id   = str(item.get("recrutPblntSn") or item.get("pbancNo") or "")
-            title    = item.get("recrutNm") or item.get("pbancNm") or ""
-            org      = item.get("instNm") or ""
-            deadline = item.get("rcptDdln") or item.get("pbancEndDt") or ""
-            detail   = item.get("recrutPblntSn") or ""
-            if not title:
-                continue
-            jobs.append({
-                "id":       f"alio_{job_id}",
-                "source":   "잡알리오",
-                "title":    title,
-                "org":      org,
-                "deadline": deadline,
-                "url":      f"https://job.alio.go.kr/recruitview.do?pbancNo={detail}",
-            })
-        print(f"  잡알리오 API: {len(jobs)}건 수집")
-    except Exception as e:
-        print(f"  잡알리오 API 오류: {e}")
-    return jobs
-
-# ═══════════════════════════════════════════
-# 크롤러 3: 잡알리오 웹 크롤링 (공통 함수)
-# ═══════════════════════════════════════════
-def _fetch_alio_pages(area_codes: list[str], label: str) -> list[dict]:
-    """
-    잡알리오 웹 크롤링 공통 함수
-    area_codes: 직종 코드 목록 (예: ["R8018", "R8002"])
-    label: 로그용 레이블
-    """
-    jobs = []
-    seen_ids = set()
-    today = date.today()
-    s_date = (today - timedelta(days=60)).strftime("%Y.%m.%d")
-    e_date = today.strftime("%Y.%m.%d")
-    base_url = "https://job.alio.go.kr/recruit.do"
-
-    for area in area_codes:
-        for page in range(1, 6):
-            params = {
-                "pageNo":   str(page),
-                "s_date":   s_date,
-                "e_date":   e_date,
-                "area":     area,
-                "order":    "REG_DATE",
-                "sort":     "DESC",
-                "pageSet":  "50",
-            }
-            try:
-                resp = requests.get(base_url, params=params, headers=HEADERS, timeout=20)
-                resp.raise_for_status()
-                soup = BeautifulSoup(resp.text, "html.parser")
-                job_links = soup.select("td a[href*='recruitview.do']")
-                if not job_links:
-                    break
-                for link in job_links:
-                    href  = link.get("href", "")
-                    title = link.get_text(strip=True)
-                    m = re.search(r"idx=(\d+)", href)
-                    if not m:
-                        continue
-                    idx    = m.group(1)
-                    job_id = f"alio_{idx}"
-                    if job_id in seen_ids:
-                        continue
-                    seen_ids.add(job_id)
-                    url = f"https://job.alio.go.kr/recruitview.do?idx={idx}"
-                    row = link.find_parent("tr")
-                    if not row:
-                        continue
-                    cols = row.find_all("td")
-                    org          = cols[2].get_text(strip=True) if len(cols) > 2 else ""
-                    deadline_raw = cols[6].get_text(strip=True) if len(cols) > 6 else ""
-                    deadline     = re.sub(r"\s*D[-–]\d+.*$", "", deadline_raw).strip()
-                    status       = cols[7].get_text(strip=True) if len(cols) > 7 else ""
-                    if "마감" in status:
-                        continue
-                    jobs.append({
-                        "id":       job_id,
-                        "source":   "잡알리오",
-                        "title":    title,
-                        "org":      org,
-                        "deadline": deadline,
-                        "url":      url,
-                    })
-            except Exception as e:
-                print(f"  잡알리오 {label} area={area} page={page} 오류: {e}", file=sys.stderr)
-                break
-
-    print(f"  잡알리오 {label}: {len(jobs)}건 수집")
+        logging.warning("KRIC 오류: %s", e)
+        print(f"  KRIC 오류: {e}")
     return jobs
 
 
-def fetch_alio_web_tech() -> list[dict]:
-    """본인용: 전산직(R8018) — 철도·IT 공공기관"""
-    return _fetch_alio_pages(["R8018"], "전산직")
+# ══════════════════════════════════════════════════════════════════════════════
+# 수집 ⑤  한국철도공사 채용 크롤러 (보조)
+# ══════════════════════════════════════════════════════════════════════════════
 
-
-def fetch_alio_web_admin() -> list[dict]:
-    """
-    동료용: 행정직(R8002) + 경영직(R8003) + 사무직(R8004)
-    잡알리오 = 공공기관·준정부기관·기타공공기관만 포함 (지방공기업은 별도)
-    """
-    return _fetch_alio_pages(["R8002", "R8003", "R8004"], "행정·경영·사무직")
-
-
-# ═══════════════════════════════════════════
-# 크롤러 4: 한국철도공사 채용
-# ═══════════════════════════════════════════
 def fetch_korail() -> list[dict]:
     jobs = []
     url = "https://info.korail.com/info/selectBbsNttList.do?bbsNo=198&key=733"
@@ -374,9 +539,7 @@ def fetch_korail() -> list[dict]:
         resp = requests.get(url, headers=HEADERS, timeout=20)
         resp.encoding = "utf-8"
         soup = BeautifulSoup(resp.text, "html.parser")
-        rows = soup.select("table tbody tr")
-        if not rows:
-            rows = soup.select(".board-list li, .bbs-list li")
+        rows = soup.select("table tbody tr") or soup.select(".board-list li")
         for row in rows:
             link = row.find("a")
             if not link:
@@ -385,11 +548,7 @@ def fetch_korail() -> list[dict]:
             if not title:
                 continue
             href = link.get("href", "")
-            full_url = (
-                f"https://info.korail.com{href}"
-                if href.startswith("/")
-                else href
-            )
+            full_url = f"https://info.korail.com{href}" if href.startswith("/") else href
             id_m = re.search(r"nttNo=(\d+)", href)
             job_id = f"korail_{id_m.group(1)}" if id_m else f"korail_{abs(hash(title))}"
             deadline = ""
@@ -399,21 +558,231 @@ def fetch_korail() -> list[dict]:
                     deadline = text[:10]
                     break
             jobs.append({
-                "id":       job_id,
-                "source":   "한국철도공사",
-                "title":    title,
-                "org":      "한국철도공사",
-                "deadline": deadline,
-                "url":      full_url,
+                "id":               job_id,
+                "source":           "한국철도공사",
+                "source_type":      "한국철도공사",
+                "title":            title,
+                "org":              "한국철도공사",
+                "inst_type":        "",
+                "deadline":         deadline,
+                "url":              full_url,
+                "field":            "정보통신",  # 코레일은 트랙A 우선 출처
+                "ncs_codes":        "",
+                "employ_type":      "",
+                "recruit_division": "",
+                "region":           "서울",
+                "body":             "",
+                "certificate":      "",
+                "prefer":           "",
+                "status":           "",
+                "pay":              "",
             })
-        print(f"  코레일: {len(jobs)}건 수집")
+        print(f"  한국철도공사: {len(jobs)}건")
     except Exception as e:
+        logging.warning("코레일 오류: %s", e)
         print(f"  코레일 오류: {e}")
     return jobs
 
-# ═══════════════════════════════════════════
-# HTML 이메일 리포트 생성
-# ═══════════════════════════════════════════
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 중복 제거
+# ══════════════════════════════════════════════════════════════════════════════
+
+def dedup_jobs(jobs: list[dict]) -> tuple[list[dict], int]:
+    """
+    1차: API별 고유번호 (id 필드)
+    2차: 기관명+공고제목 조합 해시
+    Returns: (deduped_jobs, removed_count)
+    """
+    seen_ids: set[str] = set()
+    seen_hashes: set[str] = set()
+    result: list[dict] = []
+    removed = 0
+
+    for job in jobs:
+        job_id = job["id"]
+        h      = _job_hash(job)
+
+        if job_id in seen_ids or h in seen_hashes:
+            removed += 1
+            continue
+
+        seen_ids.add(job_id)
+        seen_hashes.add(h)
+        result.append(job)
+
+    return result, removed
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 공통 필터
+# ══════════════════════════════════════════════════════════════════════════════
+
+def common_filter(jobs: list[dict]) -> tuple[list[dict], list[tuple]]:
+    """
+    접수중 + 지역(서울/경기/인천) + 정규직/무기계약직 + 신입 단독 제외
+    Returns: (passed, [(job, reason), ...])
+    """
+    common  = KW.get("common", {})
+    regions = common.get("region", ["서울", "경기", "인천"])
+    employ_ok = common.get("employ_include", ["정규직", "무기계약직"])
+    title_ng  = common.get("title_exclude", ["청년인턴", "인턴"])
+
+    passed: list[dict] = []
+    rejected: list[tuple] = []
+
+    for job in jobs:
+        title  = job.get("title", "")
+        status = job.get("status", "")
+        employ = job.get("employ_type", "")
+        div    = job.get("recruit_division", "")
+        region = job.get("region", "")
+
+        # ① 상태 (빈 칸이면 패스 — KRIC/Korail은 status 없음)
+        if status and status not in ("Y",) and "접수중" not in status:
+            rejected.append((job, f"마감·종료: status={status}"))
+            continue
+
+        # ② 지역 (빈 칸이면 패스)
+        if region and not any(r in region for r in regions):
+            rejected.append((job, f"지역외: {region[:30]}"))
+            continue
+
+        # ③ 고용형태 (빈 칸이면 패스)
+        if employ and not any(e in employ for e in employ_ok):
+            rejected.append((job, f"비정규직: {employ[:30]}"))
+            continue
+
+        # ④ 채용구분: "신입" 단독이면 제외 (신입+경력은 OK)
+        if div and div.strip() == "신입":
+            rejected.append((job, "신입 단독"))
+            continue
+
+        # ⑤ 제목 제외어 (청년인턴 등)
+        matched_ng = next((ng for ng in title_ng if ng in title), None)
+        if matched_ng:
+            rejected.append((job, f"제외어: {matched_ng}"))
+            continue
+
+        passed.append(job)
+
+    return passed, rejected
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 2트랙 매칭
+# ══════════════════════════════════════════════════════════════════════════════
+
+def match_tracks(jobs: list[dict]) -> list[dict]:
+    """
+    각 job에 track / matched_keywords / score / grade 추가
+    반환: 1개 이상의 트랙에 매칭된 job 목록
+    """
+    a_kw      = KW.get("track_a", {})
+    b_kw      = KW.get("track_b", {})
+
+    a_ncs_auto    = a_kw.get("ncs_auto", ["R600020"])
+    a_fields      = a_kw.get("field", ["정보통신"])
+    a_include     = a_kw.get("include", [])
+    a_exclude     = a_kw.get("exclude", [])
+
+    b_include     = b_kw.get("include", [])
+    b_exclude     = b_kw.get("exclude", [])
+
+    result: list[dict] = []
+
+    for _job in jobs:
+        job    = dict(_job)  # copy — 원본 수정하지 않음
+        field  = job.get("field", "")
+        ncs    = job.get("ncs_codes", "")
+        source = job.get("source", "")
+
+        # 키워드 검색 텍스트 구성
+        search_text = " ".join(filter(None, [
+            job.get("title", ""),
+            job.get("body", ""),
+            job.get("certificate", ""),
+            job.get("prefer", ""),
+            job.get("org", ""),
+        ]))
+
+        # ── Track A ──────────────────────────────────────────────
+        # 1차 확정: 정보통신 분야 OR R600020 NCS (출처 무관 — 키워드 매칭 필수)
+        # KRIC/코레일 출처도 IT 무관 공고가 섞이므로 출처 1차확정 제거
+        a_confirmed = (
+            any(f in field for f in a_fields) or
+            any(c in ncs for c in a_ncs_auto)
+        )
+        a_matched_kw = [k for k in a_include if k in search_text]
+        a_excl       = any(k in search_text for k in a_exclude)
+
+        track_a = False
+        if a_confirmed and not a_excl:
+            track_a = True          # 1차 확정 (키워드 불필요)
+        elif a_matched_kw and not a_excl:
+            track_a = True          # 키워드 매칭으로 A 확정
+
+        # ── Track B ──────────────────────────────────────────────
+        b_matched_kw = [k for k in b_include if k in search_text]
+        b_excl       = any(k in search_text for k in b_exclude)
+
+        # B는 항상 키워드 매칭 필요
+        track_b = bool(b_matched_kw and not b_excl)
+
+        # ── 결과 ─────────────────────────────────────────────────
+        if not track_a and not track_b:
+            continue
+
+        # 트랙 라벨
+        if track_a and track_b:
+            track = "AB"
+        elif track_a:
+            track = "A"
+        else:
+            track = "B"
+
+        # 매칭 키워드 합산 (중복 제거)
+        all_kw = list(dict.fromkeys(
+            (a_matched_kw if track_a else []) +
+            (b_matched_kw if track_b else [])
+        ))
+
+        # 점수 계산: 키워드 수 / 1차확정은 최소 1
+        a_score = len(a_matched_kw) if a_matched_kw else (1 if a_confirmed else 0)
+        b_score = len(b_matched_kw)
+        score   = max(a_score, b_score)
+
+        job["track"]            = track
+        job["matched_keywords"] = all_kw
+        job["score"]            = score
+        job["grade"]            = grade(score)
+        job["days_left"]        = days_left(job.get("deadline", ""))
+
+        result.append(job)
+
+    return result
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 제외 로그
+# ══════════════════════════════════════════════════════════════════════════════
+
+def write_filtered_log(rejected: list[tuple], date_str: str):
+    """logs/filtered_YYYYMMDD.log 기록"""
+    log_path = _LOG_DIR / f"filtered_{date_str}.log"
+    lines = []
+    for job, reason in rejected:
+        lines.append(
+            f"[{reason}] {job.get('org','?')} — {job.get('title','?')[:60]}"
+        )
+    log_path.write_text("\n".join(lines), encoding="utf-8")
+    return len(lines)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# HTML 이메일 리포트
+# ══════════════════════════════════════════════════════════════════════════════
+
 def _grade_badge(g: str) -> str:
     colors = {
         "상": ("#dc2626", "#fee2e2", "#fca5a5"),
@@ -427,41 +796,63 @@ def _grade_badge(g: str) -> str:
         f"font-size:11px;font-weight:700;'>{g}</span>"
     )
 
-def build_html_report(matched: list[dict], today: str, title_prefix: str = "채용") -> str:
-    total = len(matched)
+
+def _source_badge(source_type: str) -> str:
+    label = source_type or "공공기관"
+    if "서울" in label or "인천" in label or "경기" in label:
+        c = "#0f766e"
+    elif "중앙" in label:
+        c = "#1d4ed8"
+    elif "나라일터" in label:
+        c = "#7c3aed"
+    else:
+        c = "#374151"
+    return (
+        f"<span style='font-size:10px;color:{c};font-weight:600;"
+        f"background:rgba(0,0,0,.05);padding:1px 5px;border-radius:4px;'>"
+        f"{label}</span>"
+    )
+
+
+def build_html_report(matched: list[dict], today: str, title_prefix: str) -> str:
+    total  = len(matched)
     urgent = [j for j in matched if (j.get("days_left") or 99) <= URGENT_DAYS]
 
+    # ── 마감임박 섹션 ─────────────────────────────────────────────────────
     urgent_html = ""
     if urgent:
         rows = ""
         for j in urgent:
+            kw_str = ", ".join(j.get("matched_keywords", [])[:4]) or "1차확정"
             rows += (
                 f"<tr style='background:#fff5f5;'>"
                 f"<td style='padding:7px 10px;border:1px solid #fca5a5;"
                 f"font-weight:700;color:#dc2626;'>⚡ D-{j['days_left']}</td>"
                 f"<td style='padding:7px 10px;border:1px solid #fca5a5;'>"
                 f"<a href='{j['url']}' style='color:#dc2626;font-weight:700;"
-                f"text-decoration:none;'>{j['title']}</a></td>"
+                f"text-decoration:none;'>{j['title'][:50]}</a><br>"
+                f"<span style='font-size:11px;color:#6b7280;'>{j['org']}</span></td>"
                 f"<td style='padding:7px 10px;border:1px solid #fca5a5;"
-                f"font-size:12px;'>{j['org']}</td>"
+                f"font-size:11px;color:#374151;'>{kw_str}</td>"
                 f"<td style='padding:7px 10px;border:1px solid #fca5a5;"
                 f"text-align:center;'>{_grade_badge(j['grade'])}</td>"
                 f"</tr>"
             )
         urgent_html = f"""
 <h3 style='color:#dc2626;margin:16px 0 8px;font-size:14px;'>
-  ⚡ 마감 임박 {URGENT_DAYS}일 이내 ({len(urgent)}건)
+  ⚡ 마감임박 {URGENT_DAYS}일 이내 ({len(urgent)}건)
 </h3>
 <table width='100%' style='border-collapse:collapse;font-size:13px;margin-bottom:14px;'>
   <tr style='background:#7f1d1d;color:#fff;'>
-    <th style='padding:7px 10px;text-align:left;width:70px;'>마감</th>
+    <th style='padding:7px 10px;text-align:left;width:60px;'>마감</th>
     <th style='padding:7px 10px;text-align:left;'>공고명</th>
-    <th style='padding:7px 10px;text-align:left;width:120px;'>기관</th>
-    <th style='padding:7px 10px;text-align:center;width:50px;'>매칭</th>
+    <th style='padding:7px 10px;text-align:left;width:130px;'>매칭어</th>
+    <th style='padding:7px 10px;text-align:center;width:45px;'>등급</th>
   </tr>
   {rows}
 </table>"""
 
+    # ── 메인 공고 테이블 ──────────────────────────────────────────────────
     if not matched:
         main_html = "<p style='color:#666;padding:10px 0;'>오늘 새로운 매칭 공고가 없습니다.</p>"
     else:
@@ -469,88 +860,73 @@ def build_html_report(matched: list[dict], today: str, title_prefix: str = "채�
         for j in matched:
             d = j.get("days_left")
             if d is None:
-                dl_str = j.get("deadline") or "미정"
+                dl_str   = j.get("deadline") or "미정"
                 dl_color = "#374151"
             elif d < 0:
-                dl_str = "마감"
+                dl_str   = "마감"
                 dl_color = "#9ca3af"
             elif d <= URGENT_DAYS:
-                dl_str = f"D-{d}"
+                dl_str   = f"D-{d}"
                 dl_color = "#dc2626"
             else:
-                dl_str = f"D-{d}"
+                dl_str   = f"D-{d}"
                 dl_color = "#374151"
+
+            kw_str   = ", ".join(j.get("matched_keywords", [])[:5]) or "1차확정"
+            field_nm = j.get("field", "") or ""
+            extra    = " | ".join(filter(None, [
+                f"분야: {field_nm}" if field_nm else "",
+                f"매칭어: {kw_str}",
+                j.get("employ_type", "")[:10] if j.get("employ_type") else "",
+                j.get("recruit_division", "")[:8] if j.get("recruit_division") else "",
+                j.get("region", "")[:10] if j.get("region") else "",
+                f"연봉 {j['pay']}" if j.get("pay") else "",
+            ]))
+
             rows += (
                 f"<tr>"
-                f"<td style='padding:8px 10px;border:1px solid #e8edf3;"
-                f"text-align:center;'>{_grade_badge(j['grade'])}</td>"
+                f"<td style='padding:8px 10px;border:1px solid #e8edf3;text-align:center;'>"
+                f"  {_grade_badge(j['grade'])}</td>"
                 f"<td style='padding:8px 10px;border:1px solid #e8edf3;'>"
-                f"<a href='{j['url']}' style='color:#1a3a6b;text-decoration:none;"
-                f"font-weight:600;'>{j['title']}</a></td>"
+                f"  {_source_badge(j.get('source_type',''))}&nbsp;"
+                f"  <a href='{j['url']}' style='color:#1a3a6b;text-decoration:none;"
+                f"  font-weight:600;'>{j['title'][:55]}</a><br>"
+                f"  <span style='font-size:11px;color:#6b7280;'>"
+                f"    {j['org']} &nbsp;·&nbsp; {extra}"
+                f"  </span></td>"
                 f"<td style='padding:8px 10px;border:1px solid #e8edf3;"
-                f"font-size:12px;'>{j['org']}</td>"
-                f"<td style='padding:8px 10px;border:1px solid #e8edf3;"
-                f"font-size:11px;color:#6b7280;'>{j['source']}</td>"
-                f"<td style='padding:8px 10px;border:1px solid #e8edf3;"
-                f"font-size:12px;font-weight:{'700' if (d or 99)<=URGENT_DAYS else '400'};"
-                f"color:{dl_color};'>{dl_str}</td>"
+                f"  font-size:12px;font-weight:{'700' if (d or 99)<=URGENT_DAYS else '400'};"
+                f"  color:{dl_color};white-space:nowrap;'>{dl_str}</td>"
                 f"</tr>"
             )
+
         main_html = f"""
 <table width='100%' style='border-collapse:collapse;font-size:13px;'>
   <tr style='background:#1a3a6b;color:#fff;'>
-    <th style='padding:8px 10px;text-align:center;width:50px;'>매칭</th>
-    <th style='padding:8px 10px;text-align:left;'>공고명</th>
-    <th style='padding:8px 10px;text-align:left;width:130px;'>기관</th>
-    <th style='padding:8px 10px;text-align:left;width:90px;'>출처</th>
+    <th style='padding:8px 10px;text-align:center;width:45px;'>등급</th>
+    <th style='padding:8px 10px;text-align:left;'>공고명 &amp; 정보</th>
     <th style='padding:8px 10px;text-align:left;width:60px;'>마감</th>
   </tr>
   {rows}
 </table>"""
 
-    action_html = ""
-    if matched:
-        top3 = matched[:3]
-        items_html = "".join(
-            f"<li style='margin-bottom:5px;'>"
-            f"<strong>{j['org']}</strong> — "
-            f"<a href='{j['url']}' style='color:#1d4ed8;text-decoration:none;'>"
-            f"{j['title'][:45]}{'…' if len(j['title'])>45 else ''}</a>"
-            f" ({_grade_badge(j['grade'])})"
-            f"</li>"
-            for j in top3
-        )
-        action_html = f"""
-<div style='background:#f0fdf4;border-left:4px solid #16a34a;padding:10px 14px;
-            margin:14px 0 0;border-radius:0 6px 6px 0;'>
-  <strong style='color:#15803d;font-size:13px;'>📋 오늘의 추천 액션</strong>
-  <ol style='margin:8px 0 0 18px;font-size:13px;line-height:1.9;'>
-    {items_html}
-  </ol>
-</div>"""
-
     html = f"""<!DOCTYPE html>
-<html lang="ko">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-</head>
+<html lang="ko"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"></head>
 <body style="font-family:'Malgun Gothic','Apple SD Gothic Neo',sans-serif;
              background:#f0f4f8;padding:20px;margin:0;">
 <div style="max-width:740px;margin:0 auto;background:#fff;border-radius:10px;
             overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.08);">
-
   <!-- 헤더 -->
   <div style="background:linear-gradient(135deg,#1a3a6b,#0f2a52);padding:18px 22px;">
     <div style="font-size:11px;color:#93c5fd;font-weight:600;letter-spacing:1px;
                 margin-bottom:5px;">DAILY JOB REPORT · {title_prefix}</div>
     <div style="font-size:20px;font-weight:800;color:#fff;">{today}</div>
     <div style="font-size:12px;color:#bdd4f5;margin-top:5px;">
-      신규 매칭 공고 &nbsp;<strong style="color:#fff;font-size:16px;">{total}건</strong>
+      신규 매칭 &nbsp;<strong style="color:#fff;font-size:16px;">{total}건</strong>
       &nbsp;|&nbsp; 마감임박 <strong style="color:#f87171;">{len(urgent)}건</strong>
     </div>
   </div>
-
   <!-- 본문 -->
   <div style="padding:18px 22px;">
     {urgent_html}
@@ -558,31 +934,31 @@ def build_html_report(matched: list[dict], today: str, title_prefix: str = "채�
       📋 신규 매칭 공고 ({total}건)
     </h3>
     {main_html}
-    {action_html}
   </div>
-
   <!-- 푸터 -->
   <div style="background:#f0f5fb;padding:11px 22px;font-size:11px;
               color:#9ca3af;border-top:1px solid #d0dcea;">
-    자동 발송 · job_monitor.py · GitHub Actions
+    자동 발송 · job_monitor.py v2 · GitHub Actions
     &nbsp;|&nbsp; 수신거부: 워크플로우 비활성화
   </div>
 </div>
-</body>
-</html>"""
+</body></html>"""
     return html
 
-# ═══════════════════════════════════════════
+
+# ══════════════════════════════════════════════════════════════════════════════
 # 이메일 발송
-# ═══════════════════════════════════════════
-def send_email(html: str, subject: str,
-               to_list: list[str], to_header: str,
-               preview_filename: str = "report_preview.html"):
+# ══════════════════════════════════════════════════════════════════════════════
+
+def send_email(
+    html: str, subject: str,
+    to_list: list[str], to_header: str,
+    preview_filename: str = "report_preview.html",
+):
     if not GMAIL_USER or not GMAIL_PASSWORD:
-        print(f"\n[이메일 미설정] 콘솔 미리보기: {subject}")
-        out = Path(preview_filename)
-        out.write_text(html, encoding="utf-8")
-        print(f"  → {out} 저장됨")
+        out_path = _BASE / preview_filename
+        print(f"\n[이메일 미설정] 미리보기 저장: {out_path}")
+        out_path.write_text(html, encoding="utf-8")
         return
     if not to_list:
         print(f"  [건너뜀] 수신자 없음: {subject}")
@@ -600,101 +976,237 @@ def send_email(html: str, subject: str,
             server.sendmail(GMAIL_USER, to_list, msg.as_string())
         print(f"✉️  발송 완료 → {to_header}")
     except Exception as e:
+        logging.warning("이메일 발송 실패: %s", e)
         print(f"이메일 발송 실패: {e}", file=sys.stderr)
 
-# ═══════════════════════════════════════════
+
+# ══════════════════════════════════════════════════════════════════════════════
 # 메인
-# ═══════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════════════
+
 def main():
-    now = datetime.now()
+    now      = datetime.now()
     today_str = now.strftime("%Y년 %m월 %d일 (%a)")
-    print(f"{'='*50}")
-    print(f"채용공고 모니터링 시작: {now.strftime('%Y-%m-%d %H:%M')}")
-    print(f"{'='*50}")
+    date_str  = now.strftime("%Y%m%d")
+
+    print("=" * 50)
+    print(f"채용공고 모니터링  {now.strftime('%Y-%m-%d %H:%M')}")
+    print("=" * 50)
 
     seen = load_seen()
     print(f"기존 확인 공고: {len(seen)}건\n")
 
-    # ── 수집 ──
-    print("【공고 수집】")
-    tech_jobs: list[dict] = []
-    tech_jobs += fetch_kric()
-    tech_jobs += fetch_alio_api()
-    tech_jobs += fetch_alio_web_tech()
-    tech_jobs += fetch_korail()
+    # ── 수집 ─────────────────────────────────────────────────────────────────
+    print("【수집】")
 
-    admin_jobs: list[dict] = []
-    admin_jobs += fetch_alio_web_admin()
+    all_jobs: list[dict] = []
+    stats: dict = {}
 
-    all_jobs = tech_jobs + admin_jobs
-    print(f"\n총 수집: {len(all_jobs)}건 (전산/통신 {len(tech_jobs)}건 + 행정 {len(admin_jobs)}건)")
+    # ① 지역정보개발원 (서울·인천·경기)
+    krid_total = 0
+    krid_fields: list[str] = []
+    for sido_nm, sido_cd in SIDO_CODES.items():
+        try:
+            jobs_s, fields = fetch_krid(DATAGOKR_API_KEY, sido_cd, sido_nm)
+        except Exception as e:
+            logging.warning("KRID(%s) 예외: %s", sido_nm, e)
+            jobs_s, fields = [], []
+        all_jobs += jobs_s
+        krid_total += len(jobs_s)
+        if not krid_fields and fields:
+            krid_fields = fields
+    stats["krid"] = {"collected": krid_total, "actual_fields": krid_fields}
 
-    # ── 신규 필터링 ──
-    new_tech  = [j for j in tech_jobs  if j["id"] not in seen]
-    new_admin = [j for j in admin_jobs if j["id"] not in seen]
-    print(f"신규: 전산/통신 {len(new_tech)}건, 행정 {len(new_admin)}건")
+    # ② 재정경제부
+    try:
+        moef_jobs, moef_stats = fetch_moef(DATAGOKR_API_KEY, max_pages=10)
+    except Exception as e:
+        logging.warning("MOEF 예외: %s", e)
+        moef_jobs, moef_stats = [], {}
+    all_jobs += moef_jobs
+    stats["moef"] = moef_stats
 
-    # ── 본인 매칭 (전산/통신직) ──
-    matched_tech = []
-    for j in new_tech:
-        s = score_job(j["title"], j["org"])
-        if s >= MIN_SCORE:
-            j["score"]     = s
-            j["grade"]     = grade(s)
-            j["days_left"] = days_left(j.get("deadline", ""))
-            matched_tech.append(j)
-    matched_tech.sort(key=lambda j: (-j["score"], j.get("days_left") or 999))
-    print(f"매칭 (본인): {len(matched_tech)}건")
+    # ③ 인사혁신처 나라일터
+    nara_kwrd = KW.get("naraijari_kwrd", ["전산", "정보통신", "보안"])
+    try:
+        nara_jobs, nara_stats = fetch_naraijari(NARAIJARI_API_KEY, nara_kwrd)
+    except Exception as e:
+        logging.warning("나라일터 예외: %s", e)
+        nara_jobs, nara_stats = [], {}
+    all_jobs += nara_jobs
+    stats["naraijari"] = nara_stats
 
-    # ── 동료 매칭 (행정직) ──
-    matched_admin = []
-    for j in new_admin:
-        s = score_admin(j["title"], j["org"])
-        if s >= MIN_ADMIN_SCORE:
-            j["score"]     = s
-            j["grade"]     = grade(s)
-            j["days_left"] = days_left(j.get("deadline", ""))
-            matched_admin.append(j)
-    matched_admin.sort(key=lambda j: (-j["score"], j.get("days_left") or 999))
-    print(f"매칭 (동료): {len(matched_admin)}건\n")
+    # ④ 철도산업정보센터
+    try:
+        kric_jobs = fetch_kric()
+    except Exception as e:
+        logging.warning("KRIC 예외: %s", e)
+        kric_jobs = []
+    all_jobs += kric_jobs
 
-    # ── seen 갱신 ──
-    seen.update(j["id"] for j in new_tech)
-    seen.update(j["id"] for j in new_admin)
+    # ⑤ 한국철도공사
+    try:
+        korail_jobs = fetch_korail()
+    except Exception as e:
+        logging.warning("코레일 예외: %s", e)
+        korail_jobs = []
+    all_jobs += korail_jobs
+
+    print(f"  합계: {len(all_jobs)}건 (중복제거 전)")
+
+    # ── 중복 제거 ─────────────────────────────────────────────────────────
+    all_jobs, dup_count = dedup_jobs(all_jobs)
+    print(f"\n【필터】")
+    print(f"  중복 제거: {dup_count}건 → 유효 {len(all_jobs)}건")
+
+    # ── 신규 필터 ────────────────────────────────────────────────────────
+    new_jobs = [j for j in all_jobs if j["id"] not in seen]
+    print(f"  신규: {len(new_jobs)}건 (기존 seen_ids 제외)")
+
+    # ── 공통 필터 ─────────────────────────────────────────────────────────
+    passed, rejected = common_filter(new_jobs)
+    print(f"  공통 통과: {len(passed)}건 / 제외: {len(rejected)}건")
+
+    # ── 2트랙 매칭 ────────────────────────────────────────────────────────
+    matched_all = match_tracks(passed)
+    matched_a = [j for j in matched_all if "A" in j.get("track", "")]
+    matched_b = [j for j in matched_all if "B" in j.get("track", "")]
+
+    # 트랙별 정렬 (점수 높은 순 → 마감일 가까운 순)
+    matched_a.sort(key=lambda j: (-j.get("score", 0), j.get("days_left") or 999))
+    matched_b.sort(key=lambda j: (-j.get("score", 0), j.get("days_left") or 999))
+
+    print(f"  트랙A 매칭: {len(matched_a)}건")
+    print(f"  트랙B 매칭: {len(matched_b)}건")
+
+    # 키워드 통계 (트랙A)
+    kw_counter: dict[str, int] = {}
+    for j in matched_a:
+        for kw in j.get("matched_keywords", []):
+            kw_counter[kw] = kw_counter.get(kw, 0) + 1
+
+    # ── 제외 로그 ─────────────────────────────────────────────────────────
+    n_filtered = write_filtered_log(rejected, date_str)
+    print(f"  → logs/filtered_{date_str}.log ({n_filtered}건)")
+
+    # ── seen_ids 갱신 ────────────────────────────────────────────────────
+    seen.update(j["id"] for j in new_jobs)
     save_seen(seen)
-    print(f"seen_ids.json 업데이트: 총 {len(seen)}건")
 
-    # ── 본인 이메일 발송 ──
-    if matched_tech:
-        html_tech = build_html_report(matched_tech, today_str, "전산·통신직 채용 모니터링")
-        subject_tech = f"[채용] {now.strftime('%m/%d')} 전산/통신 신규 {len(matched_tech)}건" + (
-            f" ⚡D-{URGENT_DAYS}↓ {sum(1 for j in matched_tech if (j.get('days_left') or 99) <= URGENT_DAYS)}건"
-            if any((j.get("days_left") or 99) <= URGENT_DAYS for j in matched_tech)
-            else ""
+    # ── 이메일 발송 ───────────────────────────────────────────────────────
+    print("\n【발송】")
+
+    # 트랙A (본인 — 전산·통신직)
+    if matched_a:
+        html_a   = build_html_report(matched_a, today_str, "전산·통신·IT직 채용 모니터링")
+        urgent_cnt = sum(1 for j in matched_a if (j.get("days_left") or 99) <= URGENT_DAYS)
+        subj_a   = (
+            f"[채용] {now.strftime('%m/%d')} 전산/통신 신규 {len(matched_a)}건"
+            + (f" ⚡D↓{urgent_cnt}건" if urgent_cnt else "")
         )
-        send_email(html_tech, subject_tech,
-                   EMAIL_TO_LIST, EMAIL_TO,
+        send_email(html_a, subj_a, EMAIL_TO_LIST, EMAIL_TO,
                    preview_filename="report_preview_tech.html")
     else:
-        print("  전산직 매칭 없음 — 이메일 발송 건너뜀")
+        print("  트랙A 매칭 없음 — 발송 건너뜀")
 
-    # ── 동료 이메일 발송 ──
-    if EMAIL_TO_ADMIN_LIST and matched_admin:
-        html_admin = build_html_report(matched_admin, today_str, "행정직(계약·예산·회계·재무) 채용 모니터링")
-        subject_admin = f"[채용] {now.strftime('%m/%d')} 행정직 신규 {len(matched_admin)}건" + (
-            f" ⚡D-{URGENT_DAYS}↓ {sum(1 for j in matched_admin if (j.get('days_left') or 99) <= URGENT_DAYS)}건"
-            if any((j.get("days_left") or 99) <= URGENT_DAYS for j in matched_admin)
-            else ""
+    # 트랙B (동료 — 행정·계약·회계)
+    if matched_b:
+        html_b   = build_html_report(matched_b, today_str, "행정·계약·회계·재무직 채용 모니터링")
+        urgent_cnt_b = sum(1 for j in matched_b if (j.get("days_left") or 99) <= URGENT_DAYS)
+        subj_b   = (
+            f"[채용] {now.strftime('%m/%d')} 행정직 신규 {len(matched_b)}건"
+            + (f" ⚡D↓{urgent_cnt_b}건" if urgent_cnt_b else "")
         )
-        send_email(html_admin, subject_admin,
-                   EMAIL_TO_ADMIN_LIST, EMAIL_TO_ADMIN,
-                   preview_filename="report_preview_admin.html")
-    elif not EMAIL_TO_ADMIN_LIST:
-        print("  동료 이메일 미설정 (EMAIL_TO_ADMIN 없음) — 행정직 리포트 건너뜀")
+        if EMAIL_TO_ADMIN_LIST:
+            send_email(html_b, subj_b, EMAIL_TO_ADMIN_LIST, EMAIL_TO_ADMIN,
+                       preview_filename="report_preview_admin.html")
+        else:
+            out_path = _BASE / "report_preview_admin.html"
+            print(f"  트랙B: 동료 이메일 미설정 — preview 저장: {out_path}")
+            out_path.write_text(html_b, encoding="utf-8")
     else:
-        print("  행정직 매칭 없음 — 동료 이메일 발송 건너뜀")
+        print("  트랙B 매칭 없음 — 발송 건너뜀")
+
+    # ── 실행 로그 출력 ────────────────────────────────────────────────────
+    print(f"""
+{'='*50}
+채용공고 모니터링  {now.strftime('%Y-%m-%d %H:%M')}
+{'='*50}
+【수집】
+  지역정보개발원(서울)   {stats.get('krid',{}).get('collected',0)//len(SIDO_CODES) if SIDO_CODES else 0}건 (추정)
+  지역정보개발원 합계    {stats.get('krid',{}).get('collected',0)}건
+  재정경제부            {stats.get('moef',{}).get('collected',0)}건
+  인사혁신처            {stats.get('naraijari',{}).get('collected',0)}건
+  KRIC/코레일           {len(kric_jobs)+len(korail_jobs)}건
+  합계                  {len(all_jobs)+dup_count}건
+
+【필터】
+  중복 제거   {dup_count}건
+  공통 통과   {len(passed)}건
+  트랙A 매칭  {len(matched_a)}건
+  트랙B 매칭  {len(matched_b)}건
+  제외        {len(rejected)}건 → logs/filtered_{date_str}.log
+
+【신규】
+  트랙A {len(matched_a)}건 / 트랙B {len(matched_b)}건
+
+【트래픽】
+  재정경제부 {stats.get('moef',{}).get('pages_fetched',0)*100}/1000 (일일한도)
+  인사혁신처 {stats.get('naraijari',{}).get('calls',0)*100}/10000
+
+【정렬방향 확인】
+  재정경제부: {stats.get('moef',{}).get('sort_direction','미확인')}
+  재정경제부 첫 SN 5개: {stats.get('moef',{}).get('first_sns',[])}
+  나라일터: Sort_order={stats.get('naraijari',{}).get('sort_order','?')}
+
+【KRID 실제 필드명】
+  {stats.get('krid',{}).get('actual_fields', '첫 호출 실패')}
+{'='*50}""")
+
+    # ── 완료 보고 표 ──────────────────────────────────────────────────────
+    krid_fields_check = stats.get("krid", {}).get("actual_fields", [])
+    doc_fields = ["no","instNm","instType","instCls","sido","title","recruitStatus",
+                  "recruitYear","recruitField","recruitCnt","recruitDivision",
+                  "employType","position","pay","workTime","workPlace","jobDetail",
+                  "retireAge","screenMethod","areaLimit","certificate","prefer",
+                  "receiptStart","receiptClose","receiptMethod","contact",
+                  "document","linkUrl","instAddr","modDate"]
+    field_match = "일치" if set(krid_fields_check) == set(doc_fields) else (
+        f"불일치 — 실제: {krid_fields_check[:5]}..." if krid_fields_check else "첫 호출 실패"
+    )
+
+    print(f"""
+▣ 완료 보고
+┌────────────────────────────────┬─────────────────────────────────┐
+│ 항목                           │ 결과                            │
+├────────────────────────────────┼─────────────────────────────────┤
+│ 지역정보개발원 수집            │ {stats.get('krid',{}).get('collected',0)}건              │
+│ KRID 실제 필드명               │ {field_match[:30]}         │
+│ 재정경제부 수집                │ {stats.get('moef',{}).get('collected',0)}건              │
+│ 재정경제부 정렬방향            │ {stats.get('moef',{}).get('sort_direction','?')[:30]}│
+│ 인사혁신처 수집                │ {stats.get('naraijari',{}).get('collected',0)}건              │
+│ 트랙A 매칭                     │ {len(matched_a)}건              │
+│ 트랙B 매칭                     │ {len(matched_b)}건              │
+│ 중복 제거                      │ {dup_count}건              │
+│ keywords.json                  │ 완료                            │
+│ sido_codes.json                │ 완료                            │
+│ Actions 버전                   │ checkout@v5 / setup-python@v6   │
+│ 재정경제부 일일 트래픽         │ {stats.get('moef',{}).get('pages_fetched',0)*100}/1000          │
+│ 인사혁신처 일일 트래픽         │ {stats.get('naraijari',{}).get('calls',0)*100}/10000         │
+└────────────────────────────────┴─────────────────────────────────┘
+
+▣ 트랙A 매칭 공고 목록""")
+
+    for j in matched_a:
+        print(f"  [{j.get('source_type','')}] {j['org']} — {j['title'][:50]}")
+        print(f"    매칭어: {', '.join(j.get('matched_keywords',[]))[:60]} | D-{j.get('days_left','?')}")
+
+    print("\n▣ 제외 샘플 (최대 20건)")
+    for job, reason in rejected[:20]:
+        print(f"  [{reason}] {job.get('org','?')} — {job.get('title','?')[:45]}")
 
     print("\n완료.")
+
 
 if __name__ == "__main__":
     main()
