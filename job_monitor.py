@@ -247,7 +247,7 @@ def fetch_krid(api_key: str, sido_cd: str, sido_nm: str) -> tuple[list[dict], li
                 "url":              _g("URL") or "https://job.cleaneye.go.kr",
                 "field":            _g("JOB_TYPE"),
                 "ncs_codes":        "",
-                "employ_type":      _g("EMPLOY_GB"),
+                "employ_type":      "",        # EMPLOY_GB=신입/경력 구분이지 고용형태 아님 → 제목 필터로 대체
                 "recruit_division": _g("ENT_RECRUIT"),
                 "region":           sido_nm,  # sidoCd로 이미 지역 지정하여 호출 — API 반환값 무시
                 "body":             _g("DUTY_DETAIL"),
