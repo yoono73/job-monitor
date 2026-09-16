@@ -1626,10 +1626,10 @@ def main():
 
 【필터】
   중복 제거   {dup_count}건
-  공통 통과   {len(passed)}건
+  공통 통과   {len(passed_all)}건
   트랙A 매칭  {len(matched_a)}건
   트랙B 매칭  {len(matched_b)}건
-  제외        {len(rejected)}건 → logs/filtered_{date_str}.log
+  제외        {len(rejected_all)}건 → logs/filtered_{date_str}.log
 
 【신규】
   트랙A {len(matched_a)}건 / 트랙B {len(matched_b)}건
@@ -1687,7 +1687,7 @@ def main():
         print(f"    매칭어: {', '.join(j.get('matched_keywords',[]))[:60]} | D-{j.get('days_left','?')}")
 
     print("\n▣ 제외 샘플 (최대 20건)")
-    for job, reason in rejected[:20]:
+    for job, reason in rejected_all[:20]:
         print(f"  [{reason}] {job.get('org','?')} — {job.get('title','?')[:45]}")
 
     # ── run_stats.json 기록 ──────────────────────────────────────────────
