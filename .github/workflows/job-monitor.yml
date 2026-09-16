@@ -31,9 +31,8 @@ jobs:
           EMAIL_TO:            ${{ secrets.EMAIL_TO }}
           GMAIL_USER:          ${{ secrets.GMAIL_USER }}
           GMAIL_APP_PASSWORD:  ${{ secrets.GMAIL_APP_PASSWORD }}
-          ALIO_API_KEY:        ${{ secrets.ALIO_API_KEY }}
-          EMAIL_TO_ADMIN:      ${{ secrets.EMAIL_TO_ADMIN }}
           NARAIJARI_API_KEY:   ${{ secrets.NARAIJARI_API_KEY }}
+          EMAIL_TO_ADMIN:      ${{ secrets.EMAIL_TO_ADMIN }}
           PYTHONUNBUFFERED:    "1"
         run: python job_monitor.py
 

@@ -421,7 +421,9 @@ def fetch_moef(api_key: str, max_pages: int = 10) -> tuple[list[dict], dict]:
 # 수집 ③  인사혁신처 API (나라일터) — 키워드별 반복 호출
 # ══════════════════════════════════════════════════════════════════════════════
 
-_NARA_URL = "https://apis.data.go.kr/1760000/PblJobService/getList"
+_NARA_URL      = "https://apis.data.go.kr/1760000/PblJobService/getList"
+_NARA_ITEM_URL = "https://apis.data.go.kr/1760000/PblJobService/getItem"
+_NARA_LIST_PAGE = "https://www.gojobs.go.kr/apmList.do?menuNo=401&mngrMenuYn=N&selMenuNo=400"
 
 def fetch_naraijari(api_key: str, kwrd_list: list[str]) -> tuple[list[dict], dict]:
     """
@@ -499,6 +501,8 @@ def fetch_naraijari(api_key: str, kwrd_list: list[str]) -> tuple[list[dict], dic
                 else:
                     region_nm = areacode  # 지방: 필터에서 제외됨
 
+                type01 = _g("type01")  # e01=공개경쟁, e02=경력경쟁, e06=공모직위 (통과)
+                                       # e03=계약직, e04=행정지원, e08=전문업무직 (제외)
                 jobs.append({
                     "id":               job_id,
                     "source":           "나라일터",
@@ -508,10 +512,10 @@ def fetch_naraijari(api_key: str, kwrd_list: list[str]) -> tuple[list[dict], dic
                     "inst_type":        _g("type02"),
                     "deadline":         enddate_raw[:4]+"-"+enddate_raw[4:6]+"-"+enddate_raw[6:8]
                                         if len(enddate_raw) >= 8 else "",
-                    "url":              f"https://www.gojobs.go.kr/recruit/recruitnoticeDetail.do?idx={idx}",
+                    "url":              _NARA_LIST_PAGE,  # /getItem 호출 후 실제 링크로 교체
                     "field":            "",
                     "ncs_codes":        "",
-                    "employ_type":      "",
+                    "employ_type":      type01,  # type01 코드 저장 → common_filter에서 판정
                     "recruit_division": "",
                     "region":           region_nm,
                     "body":             "",
@@ -528,6 +532,33 @@ def fetch_naraijari(api_key: str, kwrd_list: list[str]) -> tuple[list[dict], dic
     stats = {"collected": len(jobs), "calls": call_count, "sort_order": sort_order}
     print(f"  나라일터: {len(jobs)}건 ({call_count}회 호출, Sort_order={sort_order})")
     return jobs, stats
+
+
+def fetch_naraijari_detail(api_key: str, idx: str) -> dict:
+    """
+    나라일터 /getItem 상세조회 — 링크·본문 취득
+    Returns: {"url": str, "contents": str}
+    link01 → link02 → link03 → 목록페이지 폴백
+    link 값이 http 없으면 https:// 자동 추가
+    """
+    enc_key = _quote(_unquote(api_key), safe="")
+    url = f"{_NARA_ITEM_URL}?serviceKey={enc_key}&idx={idx}&resultType=xml"
+    try:
+        resp = requests.get(url, timeout=20)
+        resp.raise_for_status()
+        root = ET.fromstring(resp.content)
+        _g = lambda tag: (root.findtext(f".//{tag}") or "").strip()
+
+        raw_link = _g("link01") or _g("link02") or _g("link03") or ""
+        if raw_link and not raw_link.startswith("http"):
+            raw_link = "https://" + raw_link
+        link = raw_link or _NARA_LIST_PAGE
+
+        contents = _g("contents")
+        return {"url": link, "contents": contents}
+    except Exception as e:
+        logging.warning("나라일터 /getItem 실패 idx=%s: %s", idx, e)
+        return {"url": _NARA_LIST_PAGE, "contents": ""}
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -722,20 +753,38 @@ def common_filter(jobs: list[dict]) -> tuple[list[dict], list[tuple]]:
             continue
 
         # ③ 고용형태 (빈 칸이면 패스)
-        if employ and not any(e in employ for e in employ_ok):
-            rejected.append((job, f"비정규직: {employ[:30]}"))
-            continue
+        is_regular_confirmed = False  # 정규직 명시 여부 (True면 title_exclude 면제)
+        if employ:
+            source = job.get("source", "")
+            if source == "나라일터":
+                # 나라일터 type01 코드 판정
+                # e01=공개경쟁, e02=경력경쟁, e06=공모직위 → 통과 (정규직 상당)
+                # e03=계약직, e04=행정지원, e08=전문업무직 → 제외
+                _nara_ng = {"e03", "e04", "e08"}
+                if employ in _nara_ng:
+                    rejected.append((job, f"비정규직(나라일터): {employ}"))
+                    continue
+                # e01/e02/e06 또는 미지정이면 정규직 확정 취급
+                if employ in {"e01", "e02", "e06"}:
+                    is_regular_confirmed = True
+            else:
+                # KRID/MOEF/KRIC: employ_type에 정규직/무기계약직 포함 여부
+                if not any(e in employ for e in employ_ok):
+                    rejected.append((job, f"비정규직: {employ[:30]}"))
+                    continue
+                is_regular_confirmed = True  # 위 체크 통과 = 정규직/무기계약직 확인됨
 
         # ④ 채용구분: "신입" 단독이면 제외 (신입+경력은 OK)
         if div and div.strip() == "신입":
             rejected.append((job, "신입 단독"))
             continue
 
-        # ⑤ 제목 제외어 (청년인턴 등)
-        matched_ng = next((ng for ng in title_ng if ng in title), None)
-        if matched_ng:
-            rejected.append((job, f"제외어: {matched_ng}"))
-            continue
+        # ⑤ 제목 제외어 (청년인턴 등) — 정규직 명시 시 면제
+        if not is_regular_confirmed:
+            matched_ng = next((ng for ng in title_ng if ng in title), None)
+            if matched_ng:
+                rejected.append((job, f"제외어: {matched_ng}"))
+                continue
 
         passed.append(job)
 
@@ -852,6 +901,53 @@ def write_filtered_log(rejected: list[tuple], date_str: str):
     return len(lines)
 
 
+def verify_link(url: str, timeout: int = 8) -> bool:
+    """
+    URL 유효성 검증 — HEAD 실패 시 GET fallback
+    timeout=8초 (정부 사이트 일부 느림 대응)
+    Returns True if accessible (status < 400), False otherwise
+    """
+    if not url or not url.startswith("http"):
+        return False
+    try:
+        r = requests.head(url, timeout=timeout, allow_redirects=True,
+                          headers=HEADERS)
+        if r.status_code < 400:
+            return True
+        # HEAD 차단하는 서버 대응 — GET으로 재시도 (stream=True로 본문 최소화)
+        with requests.get(url, timeout=timeout, allow_redirects=True,
+                          headers=HEADERS, stream=True) as r2:
+            return r2.status_code < 400
+    except Exception:
+        return False
+
+
+def verify_links_and_log(jobs: list[dict], date_str: str) -> list[str]:
+    """
+    매칭 목록 전체 링크 검증. 실패 시 job["url"] = None.
+    logs/link_check_YYYYMMDD.log 기록.
+    반환: 로그 라인 목록
+    """
+    lines = []
+    for j in jobs:
+        url = j.get("url")
+        if not url:
+            lines.append(f"SKIP  [{j.get('org','?')}] url=None 이미 처리됨")
+            continue
+        ok = verify_link(url)
+        org  = j.get("org", "?")[:20]
+        titl = j.get("title", "?")[:35]
+        if ok:
+            lines.append(f"OK    [{org}] {titl} → {url[:80]}")
+        else:
+            lines.append(f"FAIL  [{org}] {titl} → {url[:80]}")
+            j["url"] = None  # 링크 없음으로 표시
+
+    log_path = _LOG_DIR / f"link_check_{date_str}.log"
+    log_path.write_text("\n".join(lines), encoding="utf-8")
+    return lines
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # HTML 이메일 리포트
 # ══════════════════════════════════════════════════════════════════════════════
@@ -899,13 +995,24 @@ def build_html_report(matched: list[dict], today: str, title_prefix: str) -> str
         rows = ""
         for j in urgent:
             kw_str = ", ".join(j.get("matched_keywords", [])[:4]) or "1차확정"
+            _url = j.get("url")
+            if _url:
+                title_cell = (
+                    f"<a href='{_url}' style='color:#dc2626;font-weight:700;"
+                    f"text-decoration:none;'>{j['title'][:50]}</a>"
+                )
+            else:
+                title_cell = (
+                    f"<span style='color:#dc2626;font-weight:700;'>{j['title'][:50]}</span>"
+                    f"<br><span style='font-size:10px;color:#9ca3af;'>"
+                    f"링크 없음 — {j.get('org','기관')} 홈페이지 또는 나라일터에서 직접 검색</span>"
+                )
             rows += (
                 f"<tr style='background:#fff5f5;'>"
                 f"<td style='padding:7px 10px;border:1px solid #fca5a5;"
                 f"font-weight:700;color:#dc2626;'>⚡ D-{j['days_left']}</td>"
                 f"<td style='padding:7px 10px;border:1px solid #fca5a5;'>"
-                f"<a href='{j['url']}' style='color:#dc2626;font-weight:700;"
-                f"text-decoration:none;'>{j['title'][:50]}</a><br>"
+                f"{title_cell}<br>"
                 f"<span style='font-size:11px;color:#6b7280;'>{j['org']}</span></td>"
                 f"<td style='padding:7px 10px;border:1px solid #fca5a5;"
                 f"font-size:11px;color:#374151;'>{kw_str}</td>"
@@ -958,14 +1065,25 @@ def build_html_report(matched: list[dict], today: str, title_prefix: str) -> str
                 f"연봉 {j['pay']}" if j.get("pay") else "",
             ]))
 
+            _url = j.get("url")
+            if _url:
+                title_link = (
+                    f"<a href='{_url}' style='color:#1a3a6b;text-decoration:none;"
+                    f"font-weight:600;'>{j['title'][:55]}</a>"
+                )
+            else:
+                title_link = (
+                    f"<span style='color:#1a3a6b;font-weight:600;'>{j['title'][:55]}</span>"
+                    f"&nbsp;<span style='font-size:10px;color:#9ca3af;font-weight:400;'>"
+                    f"[링크없음 — {j.get('org','기관')} 홈페이지·나라일터 직접 검색]</span>"
+                )
             rows += (
                 f"<tr>"
                 f"<td style='padding:8px 10px;border:1px solid #e8edf3;text-align:center;'>"
                 f"  {_grade_badge(j['grade'])}</td>"
                 f"<td style='padding:8px 10px;border:1px solid #e8edf3;'>"
                 f"  {_source_badge(j.get('source_type',''))}&nbsp;"
-                f"  <a href='{j['url']}' style='color:#1a3a6b;text-decoration:none;"
-                f"  font-weight:600;'>{j['title'][:55]}</a><br>"
+                f"  {title_link}<br>"
                 f"  <span style='font-size:11px;color:#6b7280;'>"
                 f"    {j['org']} &nbsp;·&nbsp; {extra}"
                 f"  </span></td>"
@@ -1160,6 +1278,28 @@ def main():
 
     print(f"  트랙A 매칭: {len(matched_a)}건")
     print(f"  트랙B 매칭: {len(matched_b)}건")
+
+    # ── 나라일터 매칭 건 상세조회 (링크·본문 취득) ─────────────────────────
+    nara_matched = [j for j in matched_all if j.get("source") == "나라일터"]
+    if nara_matched:
+        print(f"  나라일터 /getItem 조회: {len(nara_matched)}건")
+        for j in nara_matched:
+            idx = j["id"].replace("naraijari_", "")
+            detail = fetch_naraijari_detail(NARAIJARI_API_KEY, idx)
+            real_url = detail["url"]
+            # 폴백 목록페이지(=유효 링크 없음)는 None으로 표시 — 목록페이지 대체 금지
+            if real_url == _NARA_LIST_PAGE:
+                j["url"] = None
+            else:
+                j["url"] = real_url
+            if detail.get("contents"):
+                j["body"] = detail["contents"][:800]
+
+    # ── 발송 전 링크 검증 ─────────────────────────────────────────────────
+    print(f"  링크 검증 중... ({len(matched_all)}건)")
+    link_lines = verify_links_and_log(matched_all, date_str)
+    fail_cnt = sum(1 for ln in link_lines if ln.startswith("FAIL"))
+    print(f"  → logs/link_check_{date_str}.log ({len(link_lines)}건, 실패={fail_cnt})")
 
     # 키워드 통계 (트랙A)
     kw_counter: dict[str, int] = {}
