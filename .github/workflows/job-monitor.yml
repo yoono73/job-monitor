@@ -36,10 +36,10 @@ jobs:
           PYTHONUNBUFFERED:    "1"
         run: python job_monitor.py
 
-      - name: Save seen IDs
+      - name: Save results
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add seen_ids.json run_stats.json
-          git diff --staged --quiet || git commit -m "chore: update seen_ids + run_stats [skip ci]"
+          git add seen_ids.json run_stats.json logs/
+          git diff --staged --quiet || git commit -m "chore: update seen_ids + logs [skip ci]"
           git push

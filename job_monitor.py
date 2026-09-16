@@ -734,16 +734,53 @@ def dedup_jobs(jobs: list[dict]) -> tuple[list[dict], int]:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# 지역 판정
+# ══════════════════════════════════════════════════════════════════════════════
+
+_SIDO_DIGIT_PREFIX = {"11", "28", "41"}   # 서울·인천·경기 앞 2자리 (숫자 코드용)
+_SIDO_NAME_PART    = ("서울", "인천", "경기")  # 지역명 부분 매칭용
+
+def in_target_region(region: str) -> tuple[bool, str]:
+    """
+    지역 통과 여부 판정.
+    - 빈값·null·"-": 전국/미상 → 통과 (로그에 "지역 미상" 기록)
+    - "00000": 전국 → 통과
+    - 순수 숫자 코드(5자리): 앞 2자리로 판정 (41111 → "41" → 경기 통과)
+    - 지역명 문자열: "전국" 포함 → 통과, 대상 시도명 부분 매칭
+    Returns: (통과여부, 메모)  통과=True 시 메모는 "" or "지역 미상" or "전국"
+                               통과=False 시 메모는 제외사유 문자열
+    """
+    if not region:
+        return True, "지역 미상"
+    r = region.strip()
+    if r.lower() in ("null", "none", "-", ""):
+        return True, "지역 미상"
+    if r == "00000":
+        return True, "전국"
+    # 순수 숫자 코드 판정 (나라일터 areacode, MOEF workRgnNmLst 숫자형)
+    if re.fullmatch(r"\d+", r):
+        if r[:2] in _SIDO_DIGIT_PREFIX:
+            return True, ""
+        return False, f"지역외(코드): {r}"
+    # 지역명 문자열 판정
+    if "전국" in r:
+        return True, "전국"
+    if any(nm in r for nm in _SIDO_NAME_PART):
+        return True, ""
+    return False, f"지역외: {r[:30]}"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # 공통 필터
 # ══════════════════════════════════════════════════════════════════════════════
 
 def common_filter(jobs: list[dict]) -> tuple[list[dict], list[tuple]]:
     """
     접수중 + 지역(서울/경기/인천) + 정규직/무기계약직 + 신입 단독 제외
+    지역 판정: in_target_region() — 숫자 코드 앞 2자리 / 지역명 부분 매칭 / 전국 통과
     Returns: (passed, [(job, reason), ...])
     """
     common  = KW.get("common", {})
-    regions = common.get("region", ["서울", "경기", "인천"])
     employ_ok = common.get("employ_include", ["정규직", "무기계약직"])
     title_ng  = common.get("title_exclude", ["청년인턴", "인턴"])
 
@@ -756,20 +793,23 @@ def common_filter(jobs: list[dict]) -> tuple[list[dict], list[tuple]]:
         employ = job.get("employ_type", "")
         div    = job.get("recruit_division", "")
         region = job.get("region", "")
-        # "null" / "NULL" 문자열 정규화 → 빈 문자열로 처리 (필터 통과)
-        if region and region.strip().lower() == "null":
-            region = ""
 
         # ① 상태 (빈 칸이면 패스 — KRIC/Korail은 status 없음)
         # "Y"=잡알리오, "접수중"=나라일터/MOEF, "모집중"=KRID
         if status and status not in ("Y",) and "접수중" not in status and "모집중" not in status:
-            rejected.append((job, f"마감·종료: status={status}"))
+            rejected.append((job, f"상태 제외: {status}"))
             continue
 
-        # ② 지역 (빈 칸이면 패스)
-        if region and not any(r in region for r in regions):
-            rejected.append((job, f"지역외: {region[:30]}"))
+        # ② 지역 판정 — in_target_region() 사용
+        #    숫자 코드(41111) → 앞 2자리로 판정, 지역명 → 부분 매칭, 전국·미상 → 통과
+        ok_region, region_note = in_target_region(region)
+        if not ok_region:
+            rejected.append((job, region_note))
             continue
+        # 지역 미상 기록 (통과이지만 로그 추적용)
+        if region_note in ("지역 미상", "전국"):
+            job = dict(job)
+            job["_region_note"] = region_note
 
         # ③ 고용형태 (빈 칸이면 패스)
         is_regular_confirmed = False  # 정규직 명시 여부 (True면 title_exclude 면제)
@@ -781,21 +821,20 @@ def common_filter(jobs: list[dict]) -> tuple[list[dict], list[tuple]]:
                 # e03=계약직, e04=행정지원, e08=전문업무직 → 제외
                 _nara_ng = {"e03", "e04", "e08"}
                 if employ in _nara_ng:
-                    rejected.append((job, f"비정규직(나라일터): {employ}"))
+                    rejected.append((job, f"고용형태 제외(나라일터): {employ}"))
                     continue
-                # e01/e02/e06 또는 미지정이면 정규직 확정 취급
                 if employ in {"e01", "e02", "e06"}:
                     is_regular_confirmed = True
             else:
                 # KRID/MOEF/KRIC: employ_type에 정규직/무기계약직 포함 여부
                 if not any(e in employ for e in employ_ok):
-                    rejected.append((job, f"비정규직: {employ[:30]}"))
+                    rejected.append((job, f"고용형태 제외: {employ[:30]}"))
                     continue
-                is_regular_confirmed = True  # 위 체크 통과 = 정규직/무기계약직 확인됨
+                is_regular_confirmed = True
 
         # ④ 채용구분: "신입" 단독이면 제외 (신입+경력은 OK)
         if div and div.strip() == "신입":
-            rejected.append((job, "신입 단독"))
+            rejected.append((job, "경력구분 제외: 신입 단독"))
             continue
 
         # ⑤ 제목 제외어 (청년인턴 등) — 정규직 명시 시 면제
@@ -814,10 +853,10 @@ def common_filter(jobs: list[dict]) -> tuple[list[dict], list[tuple]]:
 # 2트랙 매칭
 # ══════════════════════════════════════════════════════════════════════════════
 
-def match_tracks(jobs: list[dict]) -> list[dict]:
+def match_tracks(jobs: list[dict]) -> tuple[list[dict], list[dict]]:
     """
     각 job에 track / matched_keywords / score / grade 추가
-    반환: 1개 이상의 트랙에 매칭된 job 목록
+    Returns: (matched, unmatched) — 미매칭 건도 반환하여 제외 로그에 기록
     """
     a_kw      = KW.get("track_a", {})
     b_kw      = KW.get("track_b", {})
@@ -831,6 +870,7 @@ def match_tracks(jobs: list[dict]) -> list[dict]:
     b_exclude     = b_kw.get("exclude", [])
 
     result: list[dict] = []
+    unmatched: list[dict] = []
 
     for _job in jobs:
         job    = dict(_job)  # copy — 원본 수정하지 않음
@@ -872,6 +912,7 @@ def match_tracks(jobs: list[dict]) -> list[dict]:
 
         # ── 결과 ─────────────────────────────────────────────────
         if not track_a and not track_b:
+            unmatched.append(job)
             continue
 
         # 트랙 라벨
@@ -901,21 +942,65 @@ def match_tracks(jobs: list[dict]) -> list[dict]:
 
         result.append(job)
 
-    return result
+    return result, unmatched
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 제외 로그
 # ══════════════════════════════════════════════════════════════════════════════
 
-def write_filtered_log(rejected: list[tuple], date_str: str):
-    """logs/filtered_YYYYMMDD.log 기록"""
+def write_filtered_log(rejected: list[tuple], date_str: str, filter_stats: dict = None):
+    """
+    logs/filtered_YYYYMMDD.log 기록
+    형식: [출처][지역] 기관명 | 제목[:50] | 판정필드 | 제외사유
+    통계 헤더: 단계별 탈락 수 요약
+    """
     log_path = _LOG_DIR / f"filtered_{date_str}.log"
     lines = []
+
+    # 통계 헤더
+    if filter_stats:
+        d = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:]}"
+        lines.append(f"=== {d} 필터 통계 ===")
+        for k, v in filter_stats.items():
+            lines.append(f"  {k:<16} {v}건")
+        lines.append("-" * 40)
+
     for job, reason in rejected:
+        source = job.get("source", "?")
+        region = (job.get("_region_note") or job.get("region") or "전국")[:8]
+        org    = job.get("org", "?")
+        title  = job.get("title", "?")[:50]
+
+        # 출처별 판정 필드 기록
+        if source == "지역정보개발원":
+            src_tag = "KRID"
+            fields  = " | ".join(filter(None, [
+                job.get("recruit_division", ""),   # ENT_RECRUIT
+                job.get("field", ""),              # JOB_TYPE
+                job.get("status", ""),             # STATUS
+            ]))
+        elif source == "재정경제부":
+            src_tag = "MOEF"
+            fields  = " | ".join(filter(None, [
+                job.get("field", ""),              # ncsCdNmLst
+                job.get("recruit_division", ""),   # recrutSeNm
+                job.get("employ_type", ""),        # hireTypeNmLst
+            ]))
+        elif source == "나라일터":
+            src_tag = "나라일터"
+            fields  = " | ".join(filter(None, [
+                job.get("employ_type", ""),        # type01
+                job.get("inst_type", ""),          # type02
+            ]))
+        else:
+            src_tag = source[:6]
+            fields  = job.get("field", "")
+
         lines.append(
-            f"[{reason}] {job.get('org','?')} — {job.get('title','?')[:60]}"
+            f"[{src_tag}][{region}] {org} | {title} | {fields} | {reason}"
         )
+
     log_path.write_text("\n".join(lines), encoding="utf-8")
     return len(lines)
 
@@ -1394,17 +1479,19 @@ def main():
     print(f"\n【필터】")
     print(f"  중복 제거: {dup_count}건 → 유효 {len(all_jobs)}건")
 
-    # ── 신규 필터 ────────────────────────────────────────────────────────
-    new_jobs = [j for j in all_jobs if j["id"] not in seen]
-    print(f"  신규: {len(new_jobs)}건 (기존 seen_ids 제외)")
+    # ── 공통 필터 (전체 수집분 — 신규 여부 무관) ──────────────────────────
+    # seen_ids와 무관하게 전체에 필터를 돌려 단계별 탈락 사유를 로그에 기록
+    passed_all, rejected_all = common_filter(all_jobs)
+    print(f"  공통 통과: {len(passed_all)}건 / 제외: {len(rejected_all)}건")
 
-    # ── 공통 필터 ─────────────────────────────────────────────────────────
-    passed, rejected = common_filter(new_jobs)
-    print(f"  공통 통과: {len(passed)}건 / 제외: {len(rejected)}건")
+    # ── 발송용: 신규 건만 추림 ────────────────────────────────────────────
+    new_jobs  = [j for j in all_jobs if j["id"] not in seen]
+    new_passed = [j for j in passed_all if j["id"] not in seen]
+    print(f"  신규(seen_ids 제외): {len(new_jobs)}건 / 필터 통과: {len(new_passed)}건")
 
-    # ── 나라일터 2단계: common_filter 통과 전체에 /getItem → body 보강 후 매칭 ──
+    # ── 나라일터 2단계: common_filter 통과 신규 건에 /getItem → body 보강 ──
     # 목록 title만으로 놓치는 공고를 contents로 최종 확정
-    nara_passed = [j for j in passed if j.get("source") == "나라일터"]
+    nara_passed = [j for j in new_passed if j.get("source") == "나라일터"]
     if nara_passed:
         print(f"  나라일터 /getItem 조회: {len(nara_passed)}건 (2단계 본문 보강)")
         for j in nara_passed:
@@ -1418,8 +1505,10 @@ def main():
             if detail.get("contents"):
                 j["body"] = detail["contents"][:800]
 
-    # ── 2트랙 매칭 ────────────────────────────────────────────────────────
-    matched_all = match_tracks(passed)
+    # ── 2트랙 매칭 (발송용 신규 건만) ────────────────────────────────────
+    matched_all, unmatched_jobs = match_tracks(new_passed)
+    # 키워드 미매칭 건도 제외 로그에 추가
+    rejected_all += [(j, "키워드 미매칭") for j in unmatched_jobs]
     matched_a = [j for j in matched_all if "A" in j.get("track", "")]
     matched_b = [j for j in matched_all if "B" in j.get("track", "")]
 
@@ -1442,9 +1531,30 @@ def main():
         for kw in j.get("matched_keywords", []):
             kw_counter[kw] = kw_counter.get(kw, 0) + 1
 
-    # ── 제외 로그 ─────────────────────────────────────────────────────────
-    n_filtered = write_filtered_log(rejected, date_str)
+    # ── 제외 로그 — 단계별 통계 집계 후 기록 ─────────────────────────────
+    _reason_counter: dict[str, int] = {}
+    for _, reason in rejected_all:
+        key = reason.split(":")[0].strip()
+        _reason_counter[key] = _reason_counter.get(key, 0) + 1
+
+    filter_stats = {
+        "수집":           len(all_jobs) + dup_count,
+        "중복 제거":      dup_count,
+        "지역 제외":      _reason_counter.get("지역외", 0) + _reason_counter.get("지역외(코드)", 0),
+        "상태 제외":      _reason_counter.get("상태 제외", 0),
+        "고용형태 제외":  _reason_counter.get("고용형태 제외", 0) + _reason_counter.get("고용형태 제외(나라일터)", 0),
+        "경력구분 제외":  _reason_counter.get("경력구분 제외", 0),
+        "제외어":         _reason_counter.get("제외어", 0),
+        "키워드 미매칭":  _reason_counter.get("키워드 미매칭", 0),
+        "트랙A 매칭":     len(matched_a),
+        "트랙B 매칭":     len(matched_b),
+    }
+
+    n_filtered = write_filtered_log(rejected_all, date_str, filter_stats)
     print(f"  → logs/filtered_{date_str}.log ({n_filtered}건)")
+    for k, v in filter_stats.items():
+        if v > 0:
+            print(f"    {k}: {v}건")
 
     # ── 이메일 발송 ───────────────────────────────────────────────────────
     print("\n【발송】")
@@ -1488,8 +1598,8 @@ def main():
         ids_to_save = set()
         for j in new_jobs:
             jid = j["id"]
-            # KRID 공고 중 실패한 시도분은 krid_failed_count > 0이면 전체 보수적으로 제외
-            # (어느 시도에서 실패했는지 공고 단위로 알 수 없으므로, 실패 있으면 KRID 전체 미등록)
+            # KRID 수집 실패 시 해당 공고 seen_ids 미등록 — 다음 실행에서 재수집
+            # (어느 시도가 실패했는지 공고 단위로 알 수 없으므로 실패 있으면 KRID 전체 미등록)
             if jid.startswith("krid_") and krid_failed_count > 0:
                 continue
             ids_to_save.add(jid)
