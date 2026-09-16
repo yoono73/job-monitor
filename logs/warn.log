@@ -1,0 +1,2 @@
+2026-09-16 16:47:59,883 WARNING MOEF 오류 page=2: HTTPSConnectionPool(host='apis.data.go.kr', port=443): Read timed out. (read timeout=20)
+2026-09-16 16:48:35,424 WARNING KRIC 오류: HTTPSConnectionPool(host='www.kric.go.kr', port=443): Max retries exceeded with url: /jsp/board/portal/sub03/org/recruitList.jsp?menuId=M080201 (Caused by NameResolutionError("HTTPSConnection(host='www.kric.go.kr', port=443): Failed to resolve 'www.kric.go.kr' ([Errno -3] Temporary failure in name resolution)"))
