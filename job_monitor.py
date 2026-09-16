@@ -371,7 +371,7 @@ def fetch_moef(api_key: str, max_pages: int = 10) -> tuple[list[dict], dict]:
                     "org":              item.get("instNm") or "",
                     "inst_type":        "",
                     "deadline":         item.get("pbancEndYmd") or "",
-                    "url":              item.get("srcUrl") or f"https://job.alio.go.kr/recruitview.do?pbancNo={sn}",
+                    "url":              item.get("srcUrl") or "https://www.alio.go.kr",  # srcUrl 우선; 없으면 잡알리오 홈
                     "field":            item.get("ncsCdNmLst") or "",
                     "ncs_codes":        item.get("ncsCdLst") or "",
                     "employ_type":      item.get("hireTypeNmLst") or "",
@@ -508,7 +508,7 @@ def fetch_naraijari(api_key: str, kwrd_list: list[str]) -> tuple[list[dict], dic
                     "inst_type":        _g("type02"),
                     "deadline":         enddate_raw[:4]+"-"+enddate_raw[4:6]+"-"+enddate_raw[6:8]
                                         if len(enddate_raw) >= 8 else "",
-                    "url":              f"https://www.gojobs.go.kr/recruit/recruitnoticeDetail.do?seq={idx}",
+                    "url":              f"https://www.gojobs.go.kr/recruit/recruitnoticeDetail.do?idx={idx}",
                     "field":            "",
                     "ncs_codes":        "",
                     "employ_type":      "",
@@ -871,19 +871,21 @@ def _grade_badge(g: str) -> str:
 
 
 def _source_badge(source_type: str) -> str:
-    label = source_type or "공공기관"
-    if "서울" in label or "인천" in label or "경기" in label:
-        c = "#0f766e"
-    elif "중앙" in label:
-        c = "#1d4ed8"
-    elif "나라일터" in label:
-        c = "#7c3aed"
+    s = source_type or ""
+    if "지방공기업" in s or "시도" in s:
+        label, c = "지방공기업", "#0f766e"
+    elif "중앙" in s or s == "":
+        label, c = "공공기관", "#1d4ed8"
+    elif "나라일터" in s:
+        label, c = "나라일터", "#7c3aed"
+    elif "철도" in s:
+        label, c = "철도", "#b45309"
     else:
-        c = "#374151"
+        label, c = "공공기관", "#374151"
     return (
         f"<span style='font-size:10px;color:{c};font-weight:600;"
         f"background:rgba(0,0,0,.05);padding:1px 5px;border-radius:4px;'>"
-        f"{label}</span>"
+        f"[{label}]</span>"
     )
 
 
