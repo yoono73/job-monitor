@@ -19,7 +19,7 @@ import smtplib
 import sys
 import time
 import xml.etree.ElementTree as ET
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from pathlib import Path
@@ -1306,20 +1306,20 @@ def save_run_stats(stats_list: list[dict]) -> None:
 def send_weekly_summary(recipients: list[str], reply_to: str) -> None:
     """KST 월요일 실행 시 지난 주(월~금) KRID 실패 통계 이메일 발송."""
     stats_list = load_run_stats()
-    kst_now = datetime.utcnow() + timedelta(hours=9)
+    kst_now = datetime.now(timezone(timedelta(hours=9))).replace(tzinfo=None)
 
     # 지난 주 월~금 KST 범위
     mon_kst = kst_now.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=kst_now.weekday())
     last_mon_kst = mon_kst - timedelta(days=7)
     last_fri_end_kst = mon_kst - timedelta(days=3, seconds=1)  # 금요일 23:59:59
 
-    # UTC ISO 문자열로 비교 (ts 필드가 UTC)
-    last_mon_utc = (last_mon_kst - timedelta(hours=9)).strftime("%Y-%m-%dT")
-    last_fri_utc = (last_fri_end_kst - timedelta(hours=9)).strftime("%Y-%m-%dT%H:%M:%S")
+    # KST ISO 문자열로 비교 (ts 필드가 KST)
+    last_mon_kst_str = last_mon_kst.strftime("%Y-%m-%dT")
+    last_fri_kst_str = last_fri_end_kst.strftime("%Y-%m-%dT%H:%M:%S")
 
     week_records = [
         r for r in stats_list
-        if last_mon_utc <= r.get("ts", "") <= last_fri_utc
+        if last_mon_kst_str <= r.get("ts", "") <= last_fri_kst_str
     ]
 
     week_label = (
@@ -1396,7 +1396,8 @@ def send_weekly_summary(recipients: list[str], reply_to: str) -> None:
 # ══════════════════════════════════════════════════════════════════════════════
 
 def main():
-    now      = datetime.now()
+    KST = timezone(timedelta(hours=9))
+    now      = datetime.now(KST)
     today_str = now.strftime("%Y년 %m월 %d일 (%a)")
     date_str  = now.strftime("%Y%m%d")
 
@@ -1692,7 +1693,7 @@ def main():
 
     # ── run_stats.json 기록 ──────────────────────────────────────────────
     run_record = {
-        "ts":             now.strftime("%Y-%m-%dT%H:%M:%S"),  # UTC
+        "ts":             now.strftime("%Y-%m-%dT%H:%M:%S"),  # KST
         "krid_ok":        len(SIDO_CODES) - krid_failed_count,
         "krid_fail":      krid_failed_count,
         "krid_collected": stats.get("krid", {}).get("collected", 0),
@@ -1702,7 +1703,7 @@ def main():
     save_run_stats(rs_list)
 
     # ── 주간 요약 (KST 월요일 실행 시 지난 주 통계 발송) ────────────────
-    kst_now = now + timedelta(hours=9)
+    kst_now = now
     if kst_now.weekday() == 0:  # 0 = 월요일
         print("  [주간 요약] KST 월요일 — 지난 주 KRID 통계 발송...")
         send_weekly_summary(EMAIL_TO_LIST, EMAIL_TO)
