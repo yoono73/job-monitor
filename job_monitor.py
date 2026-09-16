@@ -71,7 +71,9 @@ DATAGOKR_API_KEY  = (
     os.environ.get("ALIO_API_KEY", "")
 ).strip()
 
-SEEN_IDS_FILE = _BASE / "seen_ids.json"
+SEEN_IDS_FILE   = _BASE / "seen_ids.json"
+RUN_STATS_FILE  = _BASE / "run_stats.json"  # 실행별 KRID 성공/실패 기록
+_RUN_STATS_KEEP = 90  # 보관 일수
 
 URGENT_DAYS = 7
 
@@ -1194,6 +1196,117 @@ def send_email(
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# 실행 통계 (run_stats.json) — KRID 실패율 주간 관찰용
+# ══════════════════════════════════════════════════════════════════════════════
+
+def load_run_stats() -> list[dict]:
+    """run_stats.json 로드. 없거나 파싱 오류 시 빈 리스트."""
+    if not RUN_STATS_FILE.exists():
+        return []
+    try:
+        return json.loads(RUN_STATS_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+
+
+def save_run_stats(stats_list: list[dict]) -> None:
+    """run_stats.json 저장. _RUN_STATS_KEEP일 초과 항목 자동 삭제."""
+    cutoff = (datetime.utcnow() - timedelta(days=_RUN_STATS_KEEP)).strftime("%Y-%m-%dT")
+    trimmed = [r for r in stats_list if r.get("ts", "") >= cutoff]
+    RUN_STATS_FILE.write_text(
+        json.dumps(trimmed, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
+
+def send_weekly_summary(recipients: list[str], reply_to: str) -> None:
+    """KST 월요일 실행 시 지난 주(월~금) KRID 실패 통계 이메일 발송."""
+    stats_list = load_run_stats()
+    kst_now = datetime.utcnow() + timedelta(hours=9)
+
+    # 지난 주 월~금 KST 범위
+    mon_kst = kst_now.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=kst_now.weekday())
+    last_mon_kst = mon_kst - timedelta(days=7)
+    last_fri_end_kst = mon_kst - timedelta(days=3, seconds=1)  # 금요일 23:59:59
+
+    # UTC ISO 문자열로 비교 (ts 필드가 UTC)
+    last_mon_utc = (last_mon_kst - timedelta(hours=9)).strftime("%Y-%m-%dT")
+    last_fri_utc = (last_fri_end_kst - timedelta(hours=9)).strftime("%Y-%m-%dT%H:%M:%S")
+
+    week_records = [
+        r for r in stats_list
+        if last_mon_utc <= r.get("ts", "") <= last_fri_utc
+    ]
+
+    week_label = (
+        f"{last_mon_kst.strftime('%Y-%m-%d')} ~ "
+        f"{(mon_kst - timedelta(days=3)).strftime('%Y-%m-%d')}"
+    )
+
+    if not week_records:
+        print(f"  주간 요약: 지난 주({week_label}) 실행 기록 없음 — 발송 건너뜀")
+        return
+
+    total_runs    = len(week_records)
+    # "완전 실패" = 서울·인천·경기 3개 시도 모두 실패한 실행
+    krid_fail_runs = sum(
+        1 for r in week_records
+        if r.get("krid_fail", 0) > 0 and r.get("krid_ok", 0) == 0
+    )
+    krid_collected = sum(r.get("krid_collected", 0) for r in week_records)
+    fail_rate      = krid_fail_runs / total_runs if total_runs else 0
+    ok_pct         = f"{(1 - fail_rate):.0%}"
+
+    warn_html = (
+        f'<p style="color:#c00;font-weight:bold">'
+        f'⚠️ KRID 실패율 {fail_rate:.0%} — 로컬 보험 실행 검토 필요</p>'
+        if fail_rate >= 0.30 else ""
+    )
+
+    html_body = f"""<html><body style="font-family:sans-serif;max-width:580px;margin:auto;padding:16px">
+<h2 style="margin-bottom:4px">📊 주간 채용 모니터링 요약</h2>
+<p style="color:#888;margin-top:0">{week_label}</p>
+<table style="border-collapse:collapse;width:100%;margin-bottom:12px">
+  <tr style="background:#f5f5f5">
+    <th style="padding:8px 12px;text-align:left;font-weight:normal">항목</th>
+    <th style="padding:8px 12px;text-align:right;font-weight:normal">결과</th>
+  </tr>
+  <tr>
+    <td style="padding:8px 12px;border-bottom:1px solid #eee">실행 횟수</td>
+    <td style="padding:8px 12px;text-align:right;border-bottom:1px solid #eee">{total_runs}회</td>
+  </tr>
+  <tr>
+    <td style="padding:8px 12px;border-bottom:1px solid #eee">KRID 완전 실패</td>
+    <td style="padding:8px 12px;text-align:right;border-bottom:1px solid #eee;
+               color:{'#c00' if krid_fail_runs > 0 else '#090'}">
+      {krid_fail_runs}회 / {total_runs}회
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:8px 12px;border-bottom:1px solid #eee">성공률</td>
+    <td style="padding:8px 12px;text-align:right;border-bottom:1px solid #eee">{ok_pct}</td>
+  </tr>
+  <tr>
+    <td style="padding:8px 12px">수집 합계 (KRID)</td>
+    <td style="padding:8px 12px;text-align:right">{krid_collected}건</td>
+  </tr>
+</table>
+{warn_html}
+<p style="color:#aaa;font-size:11px">
+  ※ 완전 실패 기준: 서울·인천·경기 3개 시도 모두 타임아웃<br>
+  ※ 판단 기준: 실패율 30% 이상 시 로컬 보험 실행 검토
+</p>
+</body></html>"""
+
+    subj = (
+        f"[주간] 채용 모니터링 KRID "
+        f"실패 {krid_fail_runs}회/{total_runs}회 ({week_label})"
+    )
+    send_email(html_body, subj, recipients, reply_to,
+               preview_filename="weekly_summary.html")
+    print(f"  주간 요약 발송: KRID 실패 {krid_fail_runs}/{total_runs}회 ({week_label})")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # 메인
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -1466,6 +1579,23 @@ def main():
     print("\n▣ 제외 샘플 (최대 20건)")
     for job, reason in rejected[:20]:
         print(f"  [{reason}] {job.get('org','?')} — {job.get('title','?')[:45]}")
+
+    # ── run_stats.json 기록 ──────────────────────────────────────────────
+    run_record = {
+        "ts":             now.strftime("%Y-%m-%dT%H:%M:%S"),  # UTC
+        "krid_ok":        len(SIDO_CODES) - krid_failed_count,
+        "krid_fail":      krid_failed_count,
+        "krid_collected": stats.get("krid", {}).get("collected", 0),
+    }
+    rs_list = load_run_stats()
+    rs_list.append(run_record)
+    save_run_stats(rs_list)
+
+    # ── 주간 요약 (KST 월요일 실행 시 지난 주 통계 발송) ────────────────
+    kst_now = now + timedelta(hours=9)
+    if kst_now.weekday() == 0:  # 0 = 월요일
+        print("  [주간 요약] KST 월요일 — 지난 주 KRID 통계 발송...")
+        send_weekly_summary(EMAIL_TO_LIST, EMAIL_TO)
 
     print("\n완료.")
 

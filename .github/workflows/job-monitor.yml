@@ -2,7 +2,7 @@
 
 on:
   schedule:
-    - cron: '0 22 * * 0-4'
+    - cron: '0 22 * * 0-4'   # KST 07:00 ??湲?    - cron: '0 1 * * 1-5'    # KST 10:00 ????(??湲??ㅼ쟾 ?섏쭛 蹂댁셿)
   workflow_dispatch:
 
 jobs:
@@ -40,6 +40,6 @@ jobs:
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add seen_ids.json
-          git diff --staged --quiet || git commit -m "chore: update seen_ids [skip ci]"
+          git add seen_ids.json run_stats.json
+          git diff --staged --quiet || git commit -m "chore: update seen_ids + run_stats [skip ci]"
           git push
