@@ -165,14 +165,20 @@ _KRID_URL = (
     "https://apis.data.go.kr/B551982/openApiEmployInfo/openXmlEmployInfo"
 )
 
-def fetch_krid(api_key: str, sido_cd: str, sido_nm: str) -> tuple[list[dict], list[str]]:
+_KRID_NG_JOB_TYPES = {"비상임", "계약직", "기간제", "임시직", "촉탁", "파견", "한시임기제", "시간제"}
+
+def fetch_krid(api_key: str, sido_cd: str, sido_nm: str) -> tuple[list[dict], list[str], bool]:
+    """
+    Returns: (jobs, actual_field_names, success_flag)
+    success_flag=False: 타임아웃·파싱오류 등 수집 자체 실패
+    """
     """
     한국지역정보개발원 지방공기업 채용 API 호출
     Returns: (jobs, actual_field_names_from_first_item)
     """
     if not api_key:
         print(f"  지역정보개발원({sido_nm}): API 키 없음")
-        return [], []
+        return [], [], False
 
     enc_key = _quote(_unquote(api_key), safe="")   # + → %2B, = → %3D (나라일터와 동일 방식)
     url = f"{_KRID_URL}?serviceKey={enc_key}&sidoCd={sido_cd}&type=xml"
@@ -191,11 +197,11 @@ def fetch_krid(api_key: str, sido_cd: str, sido_nm: str) -> tuple[list[dict], li
                 time.sleep(wait)
             else:
                 print(f"  지역정보개발원({sido_nm}): {len(_retry_delays)+1}회 시도 후 타임아웃 — 건너뜀")
-                return [], []
+                return [], [], False
         except Exception as e:
             logging.warning("KRID(%s) 연결 오류: %s", sido_nm, e)
             print(f"  지역정보개발원({sido_nm}): 연결 오류 — {e}")
-            return [], []
+            return [], [], False
 
     try:
         if resp.status_code != 200:
@@ -209,12 +215,12 @@ def fetch_krid(api_key: str, sido_cd: str, sido_nm: str) -> tuple[list[dict], li
         if result_code and result_code not in ("0", "00", "0000", ""):
             logging.warning("KRID(%s) 오류코드: %s %s", sido_nm, result_code, result_msg)
             print(f"  지역정보개발원({sido_nm}): 오류코드 {result_code} {result_msg}")
-            return [], []
+            return [], [], False
 
         items = root.findall(".//item")
         if not items:
             print(f"  지역정보개발원({sido_nm}): 0건")
-            return [], []
+            return [], [], True  # 성공이지만 공고 없음
 
         # 첫 항목에서 실제 필드명 추출 (완료보고용)
         actual_fields = [child.tag for child in items[0]] if items else []
@@ -231,10 +237,19 @@ def fetch_krid(api_key: str, sido_cd: str, sido_nm: str) -> tuple[list[dict], li
 
             job_id = f"krid_{no}" if no else f"krid_{abs(hash(title + _g('ENT_NAME')))}"
 
-            # STATUS: 마감 여부
+            # STATUS: "모집중" 아닌 것 제외 (마감·공고종료 등)
             status = _g("STATUS")
-            if status and "마감" in status:
+            if status and "모집중" not in status:
                 continue
+
+            # JOB_TYPE 필드로 비정규직 1차 차단 (수집 단계)
+            job_type = _g("JOB_TYPE")
+            if job_type and any(ng in job_type for ng in _KRID_NG_JOB_TYPES):
+                continue
+
+            # URL: 빈값·"-"·"null" → None (폴백 목록페이지 금지)
+            raw_url = _g("URL")
+            url_val = None if (not raw_url or raw_url.strip().lower() in ("-", "null", "none")) else raw_url
 
             jobs.append({
                 "id":               job_id,
@@ -244,8 +259,8 @@ def fetch_krid(api_key: str, sido_cd: str, sido_nm: str) -> tuple[list[dict], li
                 "org":              _g("ENT_NAME"),
                 "inst_type":        _g("ENT_GB"),       # 지방공기업 | 출자출연기관
                 "deadline":         _g("PUB_END_DATE"),
-                "url":              _g("URL") or "https://job.cleaneye.go.kr",
-                "field":            _g("JOB_TYPE"),
+                "url":              url_val,
+                "field":            job_type,
                 "ncs_codes":        "",
                 "employ_type":      "",        # EMPLOY_GB=신입/경력 구분이지 고용형태 아님 → 제목 필터로 대체
                 "recruit_division": _g("ENT_RECRUIT"),
@@ -258,16 +273,16 @@ def fetch_krid(api_key: str, sido_cd: str, sido_nm: str) -> tuple[list[dict], li
             })
 
         print(f"  지역정보개발원({sido_nm}): {len(jobs)}건")
-        return jobs, actual_fields
+        return jobs, actual_fields, True
 
     except ET.ParseError as e:
         logging.warning("KRID(%s) XML 파싱 오류: %s", sido_nm, e)
         print(f"  지역정보개발원({sido_nm}): XML 파싱 오류 — {e}")
-        return [], []
+        return [], [], False
     except Exception as e:
         logging.warning("KRID(%s) 오류: %s", sido_nm, e)
         print(f"  지역정보개발원({sido_nm}): 오류 — {e}")
-        return [], []
+        return [], [], False
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -363,6 +378,11 @@ def fetch_moef(api_key: str, max_pages: int = 10) -> tuple[list[dict], dict]:
                 if not title:
                     continue
 
+                # srcUrl: 빈값 → None (폴백 금지 — 목록페이지 대체 시 404 발생 사례 있음)
+                _src_url = (item.get("srcUrl") or "").strip()
+                if not _src_url or _src_url.lower() in ("-", "null", "none"):
+                    _src_url = None
+
                 jobs.append({
                     "id":               f"moef_{sn}",
                     "source":           "재정경제부",
@@ -371,7 +391,7 @@ def fetch_moef(api_key: str, max_pages: int = 10) -> tuple[list[dict], dict]:
                     "org":              item.get("instNm") or "",
                     "inst_type":        "",
                     "deadline":         item.get("pbancEndYmd") or "",
-                    "url":              item.get("srcUrl") or "https://www.alio.go.kr",  # srcUrl 우선; 없으면 잡알리오 홈
+                    "url":              _src_url,  # srcUrl 그대로; 없으면 None
                     "field":            item.get("ncsCdNmLst") or "",
                     "ncs_codes":        item.get("ncsCdLst") or "",
                     "employ_type":      item.get("hireTypeNmLst") or "",
@@ -1202,20 +1222,28 @@ def main():
     # SKIP_KRID=1 환경변수: GitHub Actions(해외IP) 등 타임아웃 환경에서 건너뜀
     krid_total = 0
     krid_fields: list[str] = []
+    krid_failed_count = 0  # 시도별 실패 횟수 추적
+    krid_ids: set[str] = set()  # KRID 공고 id — 실패 시 seen_ids 미등록 용도
     if os.environ.get("SKIP_KRID", "").strip() == "1":
         print("  [SKIP_KRID=1] 지역정보개발원 수집 건너뜀 (해외IP 차단)")
     else:
         for sido_nm, sido_cd in SIDO_CODES.items():
             try:
-                jobs_s, fields = fetch_krid(DATAGOKR_API_KEY, sido_cd, sido_nm)
+                jobs_s, fields, ok = fetch_krid(DATAGOKR_API_KEY, sido_cd, sido_nm)
             except Exception as e:
                 logging.warning("KRID(%s) 예외: %s", sido_nm, e)
-                jobs_s, fields = [], []
+                jobs_s, fields, ok = [], [], False
+            if not ok:
+                krid_failed_count += 1
+                logging.warning("KRID(%s) 수집 실패 — 해당 공고 seen_ids 미등록", sido_nm)
             all_jobs += jobs_s
             krid_total += len(jobs_s)
+            for j in jobs_s:
+                krid_ids.add(j["id"])
             if not krid_fields and fields:
                 krid_fields = fields
-    stats["krid"] = {"collected": krid_total, "actual_fields": krid_fields}
+    stats["krid"] = {"collected": krid_total, "actual_fields": krid_fields,
+                     "failed": krid_failed_count}
 
     # ② 재정경제부
     try:
@@ -1226,10 +1254,10 @@ def main():
     all_jobs += moef_jobs
     stats["moef"] = moef_stats
 
-    # ③ 인사혁신처 나라일터
+    # ③ 인사혁신처 나라일터 (DATAGOKR_API_KEY로 통일 — data.go.kr 동일 계정)
     nara_kwrd = KW.get("naraijari_kwrd", ["전산", "정보통신", "보안"])
     try:
-        nara_jobs, nara_stats = fetch_naraijari(NARAIJARI_API_KEY, nara_kwrd)
+        nara_jobs, nara_stats = fetch_naraijari(DATAGOKR_API_KEY, nara_kwrd)
     except Exception as e:
         logging.warning("나라일터 예외: %s", e)
         nara_jobs, nara_stats = [], {}
@@ -1267,6 +1295,22 @@ def main():
     passed, rejected = common_filter(new_jobs)
     print(f"  공통 통과: {len(passed)}건 / 제외: {len(rejected)}건")
 
+    # ── 나라일터 2단계: common_filter 통과 전체에 /getItem → body 보강 후 매칭 ──
+    # 목록 title만으로 놓치는 공고를 contents로 최종 확정
+    nara_passed = [j for j in passed if j.get("source") == "나라일터"]
+    if nara_passed:
+        print(f"  나라일터 /getItem 조회: {len(nara_passed)}건 (2단계 본문 보강)")
+        for j in nara_passed:
+            idx = j["id"].replace("naraijari_", "")
+            detail = fetch_naraijari_detail(DATAGOKR_API_KEY, idx)
+            real_url = detail["url"]
+            if real_url == _NARA_LIST_PAGE:
+                j["url"] = None
+            else:
+                j["url"] = real_url
+            if detail.get("contents"):
+                j["body"] = detail["contents"][:800]
+
     # ── 2트랙 매칭 ────────────────────────────────────────────────────────
     matched_all = match_tracks(passed)
     matched_a = [j for j in matched_all if "A" in j.get("track", "")]
@@ -1278,22 +1322,6 @@ def main():
 
     print(f"  트랙A 매칭: {len(matched_a)}건")
     print(f"  트랙B 매칭: {len(matched_b)}건")
-
-    # ── 나라일터 매칭 건 상세조회 (링크·본문 취득) ─────────────────────────
-    nara_matched = [j for j in matched_all if j.get("source") == "나라일터"]
-    if nara_matched:
-        print(f"  나라일터 /getItem 조회: {len(nara_matched)}건")
-        for j in nara_matched:
-            idx = j["id"].replace("naraijari_", "")
-            detail = fetch_naraijari_detail(NARAIJARI_API_KEY, idx)
-            real_url = detail["url"]
-            # 폴백 목록페이지(=유효 링크 없음)는 None으로 표시 — 목록페이지 대체 금지
-            if real_url == _NARA_LIST_PAGE:
-                j["url"] = None
-            else:
-                j["url"] = real_url
-            if detail.get("contents"):
-                j["body"] = detail["contents"][:800]
 
     # ── 발송 전 링크 검증 ─────────────────────────────────────────────────
     print(f"  링크 검증 중... ({len(matched_all)}건)")
@@ -1348,9 +1376,20 @@ def main():
         print("  트랙B 매칭 없음 — 발송 건너뜀")
 
     # ── seen_ids 갱신 — 발송 성공(또는 매칭 0건)일 때만 저장 ────────────
+    # KRID 실패 시: 해당 공고는 seen_ids 미등록 → 다음 실행에서 재수집
     if send_ok_a and send_ok_b:
-        seen.update(j["id"] for j in new_jobs)
+        ids_to_save = set()
+        for j in new_jobs:
+            jid = j["id"]
+            # KRID 공고 중 실패한 시도분은 krid_failed_count > 0이면 전체 보수적으로 제외
+            # (어느 시도에서 실패했는지 공고 단위로 알 수 없으므로, 실패 있으면 KRID 전체 미등록)
+            if jid.startswith("krid_") and krid_failed_count > 0:
+                continue
+            ids_to_save.add(jid)
+        seen.update(ids_to_save)
         save_seen(seen)
+        if krid_failed_count > 0:
+            print(f"⚠️  KRID {krid_failed_count}개 시도 실패 — 해당 공고 seen_ids 미등록 (다음 실행 재수집)")
     else:
         logging.error("이메일 발송 실패 — seen_ids 미갱신 (다음 실행에서 재시도)")
         print("⚠️  발송 실패 — seen_ids 미갱신, 다음 실행에서 재시도", file=sys.stderr)
@@ -1409,6 +1448,7 @@ def main():
 │ 항목                           │ 결과                            │
 ├────────────────────────────────┼─────────────────────────────────┤
 │ 지역정보개발원 수집            │ {stats.get('krid',{}).get('collected',0)}건              │
+│ KRID 수집 실패                 │ {stats.get('krid',{}).get('failed',0)}건 / {len(SIDO_CODES)}시도         │
 │ KRID 실제 필드명               │ {field_match[:30]}         │
 │ 재정경제부 수집                │ {stats.get('moef',{}).get('collected',0)}건              │
 │ 재정경제부 정렬방향            │ {stats.get('moef',{}).get('sort_direction','?')[:30]}│
