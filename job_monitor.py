@@ -169,12 +169,9 @@ _KRID_NG_JOB_TYPES = {"비상임", "계약직", "기간제", "임시직", "촉�
 
 def fetch_krid(api_key: str, sido_cd: str, sido_nm: str) -> tuple[list[dict], list[str], bool]:
     """
+    한국지역정보개발원 지방공기업 채용 API 호출
     Returns: (jobs, actual_field_names, success_flag)
     success_flag=False: 타임아웃·파싱오류 등 수집 자체 실패
-    """
-    """
-    한국지역정보개발원 지방공기업 채용 API 호출
-    Returns: (jobs, actual_field_names_from_first_item)
     """
     if not api_key:
         print(f"  지역정보개발원({sido_nm}): API 키 없음")
@@ -1223,7 +1220,6 @@ def main():
     krid_total = 0
     krid_fields: list[str] = []
     krid_failed_count = 0  # 시도별 실패 횟수 추적
-    krid_ids: set[str] = set()  # KRID 공고 id — 실패 시 seen_ids 미등록 용도
     if os.environ.get("SKIP_KRID", "").strip() == "1":
         print("  [SKIP_KRID=1] 지역정보개발원 수집 건너뜀 (해외IP 차단)")
     else:
@@ -1238,8 +1234,6 @@ def main():
                 logging.warning("KRID(%s) 수집 실패 — 해당 공고 seen_ids 미등록", sido_nm)
             all_jobs += jobs_s
             krid_total += len(jobs_s)
-            for j in jobs_s:
-                krid_ids.add(j["id"])
             if not krid_fields and fields:
                 krid_fields = fields
     stats["krid"] = {"collected": krid_total, "actual_fields": krid_fields,
