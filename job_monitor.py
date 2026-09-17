@@ -869,6 +869,12 @@ def match_tracks(jobs: list[dict]) -> tuple[list[dict], list[dict]]:
     b_include     = b_kw.get("include", [])
     b_exclude     = b_kw.get("exclude", [])
 
+    c_kw       = KW.get("track_c", {})
+    c_lang_kw  = c_kw.get("lang_keywords", ["일본어", "일어", "JLPT"])
+    c_lang_all = c_lang_kw + c_kw.get("lang_keywords_broad", ["대일", "일본"])
+    c_job_kw   = c_kw.get("job_keywords", [])
+    c_exclude  = c_kw.get("exclude", [])
+
     result: list[dict] = []
     unmatched: list[dict] = []
 
@@ -910,29 +916,48 @@ def match_tracks(jobs: list[dict]) -> tuple[list[dict], list[dict]]:
         # B는 항상 키워드 매칭 필요
         track_b = bool(b_matched_kw and not b_excl)
 
+        # ── Track C ──────────────────────────────────────────────
+        # 조건1: 제목·본문에 일본어/일어/JLPT 직접 등장
+        title_body_text = f"{job.get('title', '')} {job.get('body', '')}"
+        c_cond1 = any(k in title_body_text for k in c_lang_kw)
+        # 조건2: A군(언어) AND B군(업무) 동시 매칭 (search_text 전체)
+        c_cond2 = (
+            any(k in search_text for k in c_lang_all) and
+            any(k in search_text for k in c_job_kw)
+        )
+        c_excl  = any(k in search_text for k in c_exclude)
+        track_c = (c_cond1 or c_cond2) and not c_excl
+
         # ── 결과 ─────────────────────────────────────────────────
-        if not track_a and not track_b:
+        if not track_a and not track_b and not track_c:
             unmatched.append(job)
             continue
 
         # 트랙 라벨
-        if track_a and track_b:
-            track = "AB"
-        elif track_a:
-            track = "A"
-        else:
-            track = "B"
+        parts = []
+        if track_a: parts.append("A")
+        if track_b: parts.append("B")
+        if track_c: parts.append("C")
+        track = "".join(parts)
 
         # 매칭 키워드 합산 (중복 제거)
+        c_matched_kw = []
+        if track_c:
+            for _k in c_lang_all + c_job_kw:
+                if _k in search_text and _k not in c_matched_kw:
+                    c_matched_kw.append(_k)
+
         all_kw = list(dict.fromkeys(
             (a_matched_kw if track_a else []) +
-            (b_matched_kw if track_b else [])
+            (b_matched_kw if track_b else []) +
+            c_matched_kw
         ))
 
         # 점수 계산: 키워드 수 / 1차확정은 최소 1
         a_score = len(a_matched_kw) if a_matched_kw else (1 if a_confirmed else 0)
         b_score = len(b_matched_kw)
-        score   = max(a_score, b_score)
+        c_score = len(c_matched_kw)
+        score   = max(a_score, b_score, c_score)
 
         job["track"]            = track
         job["matched_keywords"] = all_kw
@@ -1244,6 +1269,122 @@ def build_html_report(matched: list[dict], today: str, title_prefix: str) -> str
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# 트랙B + 트랙C 합산 이메일 빌더 (섹션 분리)
+# ══════════════════════════════════════════════════════════════════════════════
+
+def build_html_report_bc(matched_b: list[dict], matched_c: list[dict], today: str) -> str:
+    """트랙B(행정·회계·계약) + 트랙C(일본어 관련) 합산 이메일 — 섹션 분리"""
+
+    def _build_rows(jobs: list[dict]) -> str:
+        if not jobs:
+            return ("<tr><td colspan='3' style='padding:10px;color:#999;"
+                    "text-align:center;'>해당 공고 없음</td></tr>")
+        rows = ""
+        for j in jobs:
+            d = j.get("days_left")
+            if d is None:
+                dl_str, dl_color = j.get("deadline") or "미정", "#374151"
+            elif d < 0:
+                dl_str, dl_color = "마감", "#9ca3af"
+            elif d <= URGENT_DAYS:
+                dl_str, dl_color = f"D-{d}", "#dc2626"
+            else:
+                dl_str, dl_color = f"D-{d}", "#374151"
+
+            kw_str = ", ".join(j.get("matched_keywords", [])[:5]) or "매칭됨"
+            _url   = j.get("url")
+            if _url:
+                title_link = (
+                    f"<a href='{_url}' style='color:#1a3a6b;text-decoration:none;"
+                    f"font-weight:600;'>{j['title'][:55]}</a>"
+                )
+            else:
+                title_link = (
+                    f"<span style='color:#1a3a6b;font-weight:600;'>{j['title'][:55]}</span>"
+                )
+            rows += (
+                f"<tr>"
+                f"<td style='padding:8px 10px;border:1px solid #e8edf3;text-align:center;'>"
+                f"  {_grade_badge(j['grade'])}</td>"
+                f"<td style='padding:8px 10px;border:1px solid #e8edf3;'>"
+                f"  {_source_badge(j.get('source_type',''))}&nbsp;"
+                f"  {title_link}<br>"
+                f"  <span style='font-size:11px;color:#6b7280;'>"
+                f"    {j['org']} &nbsp;·&nbsp; 매칭어: {kw_str}"
+                f"  </span></td>"
+                f"<td style='padding:8px 10px;border:1px solid #e8edf3;"
+                f"  font-size:12px;font-weight:{'700' if (d or 99)<=URGENT_DAYS else '400'};"
+                f"  color:{dl_color};white-space:nowrap;'>{dl_str}</td>"
+                f"</tr>"
+            )
+        return rows
+
+    total_b = len(matched_b)
+    total_c = len(matched_c)
+    urgent_total = (
+        sum(1 for j in matched_b if (j.get("days_left") or 99) <= URGENT_DAYS) +
+        sum(1 for j in matched_c if (j.get("days_left") or 99) <= URGENT_DAYS)
+    )
+
+    b_section = f"""
+<h3 style='color:#1a3a6b;margin:16px 0 8px;font-size:14px;font-weight:700;
+           border-left:4px solid #1a3a6b;padding-left:8px;'>
+  📋 행정 · 회계 · 계약 ({total_b}건)
+</h3>
+<table width='100%' style='border-collapse:collapse;font-size:13px;margin-bottom:20px;'>
+  <tr style='background:#1a3a6b;color:#fff;'>
+    <th style='padding:8px 10px;text-align:center;width:45px;'>등급</th>
+    <th style='padding:8px 10px;text-align:left;'>공고명 &amp; 정보</th>
+    <th style='padding:8px 10px;text-align:left;width:60px;'>마감</th>
+  </tr>
+  {_build_rows(matched_b)}
+</table>""" if matched_b else ""
+
+    c_section = f"""
+<h3 style='color:#92400e;margin:16px 0 8px;font-size:14px;font-weight:700;
+           border-left:4px solid #b45309;padding-left:8px;'>
+  🗾 일본어 관련 ({total_c}건)
+</h3>
+<table width='100%' style='border-collapse:collapse;font-size:13px;margin-bottom:20px;'>
+  <tr style='background:#92400e;color:#fff;'>
+    <th style='padding:8px 10px;text-align:center;width:45px;'>등급</th>
+    <th style='padding:8px 10px;text-align:left;'>공고명 &amp; 정보</th>
+    <th style='padding:8px 10px;text-align:left;width:60px;'>마감</th>
+  </tr>
+  {_build_rows(matched_c)}
+</table>""" if matched_c else ""
+
+    return f"""<!DOCTYPE html>
+<html lang="ko"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="font-family:'Malgun Gothic','Apple SD Gothic Neo',sans-serif;
+             background:#f0f4f8;padding:20px;margin:0;">
+<div style="max-width:740px;margin:0 auto;background:#fff;border-radius:10px;
+            overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.08);">
+  <div style="background:linear-gradient(135deg,#1a3a6b,#0f2a52);padding:18px 22px;">
+    <div style="font-size:11px;color:#93c5fd;font-weight:600;letter-spacing:1px;
+                margin-bottom:5px;">DAILY JOB REPORT · 행정·계약·일본어</div>
+    <div style="font-size:20px;font-weight:800;color:#fff;">{today}</div>
+    <div style="font-size:12px;color:#bdd4f5;margin-top:5px;">
+      행정 <strong style="color:#fff;font-size:14px;">{total_b}건</strong>
+      &nbsp;·&nbsp; 일본어 <strong style="color:#fcd34d;font-size:14px;">{total_c}건</strong>
+      &nbsp;|&nbsp; 마감임박 <strong style="color:#f87171;">{urgent_total}건</strong>
+    </div>
+  </div>
+  <div style="padding:18px 22px;">
+    {b_section}
+    {c_section}
+  </div>
+  <div style="background:#f0f5fb;padding:11px 22px;font-size:11px;
+              color:#9ca3af;border-top:1px solid #d0dcea;">
+    자동 발송 · job_monitor.py v2 · GitHub Actions
+    &nbsp;|&nbsp; 수신거부: 워크플로우 비활성화
+  </div>
+</div>
+</body></html>"""
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # 이메일 발송
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -1512,13 +1653,16 @@ def main():
     rejected_all += [(j, "키워드 미매칭") for j in unmatched_jobs]
     matched_a = [j for j in matched_all if "A" in j.get("track", "")]
     matched_b = [j for j in matched_all if "B" in j.get("track", "")]
+    matched_c = [j for j in matched_all if "C" in j.get("track", "")]
 
     # 트랙별 정렬 (점수 높은 순 → 마감일 가까운 순)
     matched_a.sort(key=lambda j: (-j.get("score", 0), j.get("days_left") or 999))
     matched_b.sort(key=lambda j: (-j.get("score", 0), j.get("days_left") or 999))
+    matched_c.sort(key=lambda j: (-j.get("score", 0), j.get("days_left") or 999))
 
     print(f"  트랙A 매칭: {len(matched_a)}건")
     print(f"  트랙B 매칭: {len(matched_b)}건")
+    print(f"  트랙C 매칭: {len(matched_c)}건")
 
     # ── 발송 전 링크 검증 ─────────────────────────────────────────────────
     print(f"  링크 검증 중... ({len(matched_all)}건)")
@@ -1559,6 +1703,16 @@ def main():
             filtered_b.append(j)
     matched_b = filtered_b
 
+    filtered_c = []
+    for j in matched_c:
+        if j.get("url") is None:
+            logging.info("[링크없음 제외] %s | %s | %s", j.get("source", "?"), j.get("org", "?"), j.get("title", "?")[:60])
+            rejected_all.append((j, "링크없음 제외"))
+            no_link_cnt += 1
+        else:
+            filtered_c.append(j)
+    matched_c = filtered_c
+
     if no_link_cnt:
         print(f"  링크없음 제외: {no_link_cnt}건")
 
@@ -1586,6 +1740,7 @@ def main():
         "링크없음 제외":  _reason_counter.get("링크없음 제외", 0),
         "트랙A 매칭":     len(matched_a),
         "트랙B 매칭":     len(matched_b),
+        "트랙C 매칭":     len(matched_c),
     }
 
     n_filtered = write_filtered_log(rejected_all, date_str, filter_stats)
@@ -1612,23 +1767,29 @@ def main():
     else:
         print("  트랙A 매칭 없음 — 발송 건너뜀")
 
-    # 트랙B (동료 — 행정·계약·회계)
-    if matched_b:
-        html_b   = build_html_report(matched_b, today_str, "행정·계약·회계·재무직 채용 모니터링")
-        urgent_cnt_b = sum(1 for j in matched_b if (j.get("days_left") or 99) <= URGENT_DAYS)
-        subj_b   = (
-            f"[채용] {now.strftime('%m/%d')} 행정직 신규 {len(matched_b)}건"
-            + (f" ⚡D↓{urgent_cnt_b}건" if urgent_cnt_b else "")
+    # 트랙B + 트랙C (동료 — 행정·계약·회계 + 일본어 관련) — 섹션 분리 합산 발송
+    if matched_b or matched_c:
+        html_bc = build_html_report_bc(matched_b, matched_c, today_str)
+        urgent_cnt_bc = (
+            sum(1 for j in matched_b if (j.get("days_left") or 99) <= URGENT_DAYS) +
+            sum(1 for j in matched_c if (j.get("days_left") or 99) <= URGENT_DAYS)
+        )
+        b_part  = f"행정 {len(matched_b)}건" if matched_b else ""
+        c_part  = f"일본어 {len(matched_c)}건" if matched_c else ""
+        bc_label = " / ".join(filter(None, [b_part, c_part]))
+        subj_bc = (
+            f"[채용] {now.strftime('%m/%d')} {bc_label}"
+            + (f" ⚡D↓{urgent_cnt_bc}건" if urgent_cnt_bc else "")
         )
         if EMAIL_TO_ADMIN_LIST:
-            send_ok_b = send_email(html_b, subj_b, EMAIL_TO_ADMIN_LIST, EMAIL_TO_ADMIN,
+            send_ok_b = send_email(html_bc, subj_bc, EMAIL_TO_ADMIN_LIST, EMAIL_TO_ADMIN,
                                    preview_filename="report_preview_admin.html")
         else:
             out_path = _BASE / "report_preview_admin.html"
-            print(f"  트랙B: 동료 이메일 미설정 — preview 저장: {out_path}")
-            out_path.write_text(html_b, encoding="utf-8")
+            print(f"  트랙B/C: 동료 이메일 미설정 — preview 저장: {out_path}")
+            out_path.write_text(html_bc, encoding="utf-8")
     else:
-        print("  트랙B 매칭 없음 — 발송 건너뜀")
+        print("  트랙B/C 매칭 없음 — 발송 건너뜀")
 
     # ── seen_ids 갱신 — 발송 성공(또는 매칭 0건)일 때만 저장 ────────────
     # KRID 실패 시: 해당 공고는 seen_ids 미등록 → 다음 실행에서 재수집
@@ -1667,10 +1828,11 @@ def main():
   공통 통과   {len(passed_all)}건
   트랙A 매칭  {len(matched_a)}건
   트랙B 매칭  {len(matched_b)}건
+  트랙C 매칭  {len(matched_c)}건
   제외        {len(rejected_all)}건 → logs/filtered_{date_str}.log
 
 【신규】
-  트랙A {len(matched_a)}건 / 트랙B {len(matched_b)}건
+  트랙A {len(matched_a)}건 / 트랙B {len(matched_b)}건 / 트랙C {len(matched_c)}건
 
 【트래픽】
   재정경제부 {stats.get('moef',{}).get('pages_fetched',0)*100}/1000 (일일한도)
@@ -1710,6 +1872,7 @@ def main():
 │ 인사혁신처 수집                │ {stats.get('naraijari',{}).get('collected',0)}건              │
 │ 트랙A 매칭                     │ {len(matched_a)}건              │
 │ 트랙B 매칭                     │ {len(matched_b)}건              │
+│ 트랙C 매칭                     │ {len(matched_c)}건              │
 │ 중복 제거                      │ {dup_count}건              │
 │ keywords.json                  │ 완료                            │
 │ sido_codes.json                │ 완료                            │
@@ -1723,6 +1886,25 @@ def main():
     for j in matched_a:
         print(f"  [{j.get('source_type','')}] {j['org']} — {j['title'][:50]}")
         print(f"    매칭어: {', '.join(j.get('matched_keywords',[]))[:60]} | D-{j.get('days_left','?')}")
+
+    if matched_c:
+        print("\n▣ 트랙C 매칭 공고 목록 (일본어 관련)")
+        bc_overlap = sum(1 for j in matched_c if "B" in j.get("track", ""))
+        c_cond1_cnt = 0
+        c_cond2_only_cnt = 0
+        _c_lang_kw = set(KW.get("track_c", {}).get("lang_keywords", ["일본어", "일어", "JLPT"]))
+        for j in matched_c:
+            title_body = f"{j.get('title','')} {j.get('body','')}"
+            if any(k in title_body for k in _c_lang_kw):
+                c_cond1_cnt += 1
+            else:
+                c_cond2_only_cnt += 1
+        print(f"  조건1(제목·본문 직접): {c_cond1_cnt}건 / 조건2(A군+B군 조합): {c_cond2_only_cnt}건")
+        print(f"  트랙B 중복: {bc_overlap}건")
+        for j in matched_c:
+            overlap_mark = " [B중복]" if "B" in j.get("track", "") else ""
+            print(f"  [{j.get('track','')}]{overlap_mark} {j['org']} — {j['title'][:50]}")
+            print(f"    매칭어: {', '.join(j.get('matched_keywords',[]))[:60]} | D-{j.get('days_left','?')}")
 
     print("\n▣ 제외 샘플 (최대 20건)")
     for job, reason in rejected_all[:20]:
