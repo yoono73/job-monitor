@@ -818,8 +818,8 @@ def common_filter(jobs: list[dict]) -> tuple[list[dict], list[tuple]]:
             if source == "나라일터":
                 # 나라일터 type01 코드 판정
                 # e01=공개경쟁, e02=경력경쟁, e06=공모직위 → 통과 (정규직 상당)
-                # e03=계약직, e04=행정지원, e08=전문업무직 → 제외
-                _nara_ng = {"e03", "e04", "e08"}
+                # e03=계약직, e04=행정지원, e08=전문업무직, e10=교육청계열 → 제외
+                _nara_ng = set(KW.get("naraijari_exclude_types", ["e03", "e04", "e08", "e10"]))
                 if employ in _nara_ng:
                     rejected.append((job, f"고용형태 제외(나라일터): {employ}"))
                     continue
@@ -1296,7 +1296,7 @@ def load_run_stats() -> list[dict]:
 
 def save_run_stats(stats_list: list[dict]) -> None:
     """run_stats.json 저장. _RUN_STATS_KEEP일 초과 항목 자동 삭제."""
-    cutoff = (datetime.utcnow() - timedelta(days=_RUN_STATS_KEEP)).strftime("%Y-%m-%dT")
+    cutoff = (datetime.now(timezone(timedelta(hours=9))).replace(tzinfo=None) - timedelta(days=_RUN_STATS_KEEP)).strftime("%Y-%m-%dT")
     trimmed = [r for r in stats_list if r.get("ts", "") >= cutoff]
     RUN_STATS_FILE.write_text(
         json.dumps(trimmed, ensure_ascii=False, indent=2), encoding="utf-8"
@@ -1440,7 +1440,7 @@ def main():
 
     # ② 재정경제부
     try:
-        moef_jobs, moef_stats = fetch_moef(DATAGOKR_API_KEY, max_pages=10)
+        moef_jobs, moef_stats = fetch_moef(DATAGOKR_API_KEY, max_pages=5)
     except Exception as e:
         logging.warning("MOEF 예외: %s", e)
         moef_jobs, moef_stats = [], {}
@@ -1526,6 +1526,42 @@ def main():
     fail_cnt = sum(1 for ln in link_lines if ln.startswith("FAIL"))
     print(f"  → logs/link_check_{date_str}.log ({len(link_lines)}건, 실패={fail_cnt})")
 
+    # ── 링크없음 제외 — url=None 공고 발송 목록에서 제거 ──────────────────
+    # 예외: 트랙A에서 ★급 키워드로 매칭된 건은 제목에 [링크확인필요] 표시 후 유지
+    _star_kw = set(KW.get("track_a", {}).get("star_keywords", ["정보통신", "전산", "정보화", "AFC", "관제"]))
+    no_link_cnt = 0
+
+    def _has_star(job: dict) -> bool:
+        return bool(set(job.get("matched_keywords", [])) & _star_kw)
+
+    filtered_a = []
+    for j in matched_a:
+        if j.get("url") is None:
+            if _has_star(j):
+                j = dict(j)
+                j["title"] = f"[링크확인필요] {j.get('title', '')}"
+                filtered_a.append(j)
+            else:
+                logging.info("[링크없음 제외] %s | %s | %s", j.get("source", "?"), j.get("org", "?"), j.get("title", "?")[:60])
+                rejected_all.append((j, "링크없음 제외"))
+                no_link_cnt += 1
+        else:
+            filtered_a.append(j)
+    matched_a = filtered_a
+
+    filtered_b = []
+    for j in matched_b:
+        if j.get("url") is None:
+            logging.info("[링크없음 제외] %s | %s | %s", j.get("source", "?"), j.get("org", "?"), j.get("title", "?")[:60])
+            rejected_all.append((j, "링크없음 제외"))
+            no_link_cnt += 1
+        else:
+            filtered_b.append(j)
+    matched_b = filtered_b
+
+    if no_link_cnt:
+        print(f"  링크없음 제외: {no_link_cnt}건")
+
     # 키워드 통계 (트랙A)
     kw_counter: dict[str, int] = {}
     for j in matched_a:
@@ -1547,6 +1583,7 @@ def main():
         "경력구분 제외":  _reason_counter.get("경력구분 제외", 0),
         "제외어":         _reason_counter.get("제외어", 0),
         "키워드 미매칭":  _reason_counter.get("키워드 미매칭", 0),
+        "링크없음 제외":  _reason_counter.get("링크없음 제외", 0),
         "트랙A 매칭":     len(matched_a),
         "트랙B 매칭":     len(matched_b),
     }
