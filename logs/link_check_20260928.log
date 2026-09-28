@@ -1,4 +1,8 @@
-SKIP  [경기도 화성시 의회사무국] url=None 이미 처리됨
-SKIP  [서울특별시 서대문구 의회사무국] url=None 이미 처리됨
-SKIP  [경기도 광명시 의회사무국] url=None 이미 처리됨
-OK    [서울특별시 송파구] 서울특별시 송파구 개방형직위(보건소장) 채용 공고 → https://www.songpa.go.kr/www/selectBbsNttView.do?bbsNo=94&amp;nttNo=19279322&amp
+OK    [서울주택도시개발공사] 서울주택도시개발공사 2026년 하반기 사무·기술직 신입사원 직무 → https://job.cleaneye.go.kr/user/ypCareersData.do?idx=79993
+OK    [한국수자원공사] [한국수자원공사] 2026년 K-water연구원 제3차 위촉연구 → https://k-water.recruiter.co.kr
+OK    [한국장애인개발원] [제2026-112호] 한국장애인개발원 2026년도 제3차 직원 → https://recruit.incruit.com/koddi
+OK    [분당서울대학교병원] 분당서울대학교병원 직원(계약별정전문직) 채용공고 → https://snubh.recruiter.co.kr
+FAIL  [서울특별시 구로구 보건소] 서울특별시 구로구 보건소 임기제공무원(의사) 채용 재공고 → https://www.guro.go.kr/www/selectBbsNttView.do?bbsNo=664&amp;nttNo=240804&amp;&a
+SKIP  [경기도 안성시 의회사무과] url=None 이미 처리됨
+SKIP  [경기도 평택시] url=None 이미 처리됨
+FAIL  [한국철도공사] 2026년 하반기 한국철도공사 신입사원(관제) 채용공고 → https://www.kric.go.kr/jsp/employment/org/recruitDetail.jsp?board_seq=5568
