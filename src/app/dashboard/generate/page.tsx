@@ -20,7 +20,7 @@ type MethodKey =
   | "random" | "balance" | "section" | "ending"
   | "bayes" | "fav" | "prime" | "norepeat"
   | "overdue" | "recent20" | "bayes_overdue"
-  | "spread";
+  | "spread" | "recent10" | "midbias";
 
 interface BayesStat {
   number: number;
@@ -104,6 +104,42 @@ function genRecent20(draws: DrawRow[]): Six {
   return top12.sort(() => Math.random() - 0.5).slice(0, 6).sort((a, b) => a - b) as Six;
 }
 
+/* ── 최근 10회 핫번호 가중 (draws[0] = 최신) ── */
+function genRecent10(draws: DrawRow[]): Six {
+  if (draws.length === 0) return genRandom();
+  const recent = draws.slice(0, 10);
+  const freq = new Array(46).fill(1);
+  recent.forEach(d => getNums(d).forEach(n => { freq[n] += 3; })); // 최근 10회 가중치 3배
+  const sel: number[] = [];
+  let pool = Array.from({ length: 45 }, (_, i) => i + 1);
+  while (sel.length < 6) {
+    const totalW = pool.reduce((s, n) => s + freq[n], 0);
+    let r = Math.random() * totalW;
+    for (const n of pool) { r -= freq[n]; if (r <= 0) { sel.push(n); pool = pool.filter(x => x !== n); break; } }
+  }
+  return sel.sort((a, b) => a - b) as Six;
+}
+
+/* ── 10-19 구간 가중 전략 ── */
+function genMidBias(draws: DrawRow[]): Six {
+  const freq = new Array(46).fill(1);
+  draws.slice(0, 50).forEach(d => getNums(d).forEach(n => { freq[n]++; }));
+  // 10-19 구간 가중치 1.5배 보강
+  for (let n = 10; n <= 19; n++) freq[n] = Math.round(freq[n] * 1.5);
+  for (let t = 0; t < 5000; t++) {
+    const sel: number[] = [];
+    let pool = Array.from({ length: 45 }, (_, i) => i + 1);
+    while (sel.length < 6) {
+      const totalW = pool.reduce((s, n) => s + freq[n], 0);
+      let r = Math.random() * totalW;
+      for (const n of pool) { r -= freq[n]; if (r <= 0) { sel.push(n); pool = pool.filter(x => x !== n); break; } }
+    }
+    const sorted = sel.sort((a, b) => a - b) as Six;
+    if (isBalanced(sorted)) return sorted;
+  }
+  return genBalance();
+}
+
 function genCold(draws: DrawRow[]): Six {
   const lastIdx = new Array(46).fill(draws.length);
   draws.forEach((d, i) => getNums(d).forEach(n => {
@@ -153,7 +189,7 @@ function passPatternFilter(nums: number[]): boolean {
   const secs = new Set(sorted.map(n => n <= 10 ? 1 : n <= 20 ? 2 : n <= 30 ? 3 : n <= 40 ? 4 : 5)).size;
   let cons = 0;
   for (let i = 0; i < sorted.length - 1; i++) if (sorted[i + 1] - sorted[i] === 1) cons++;
-  return sum >= 100 && sum <= 159 && (odd === 3 || odd === 4) && secs >= 3 && cons >= 1;
+  return sum >= 95 && sum <= 180 && (odd >= 2 && odd <= 5) && secs >= 3;
 }
 
 function genPatternFilter(): Six {
@@ -462,13 +498,15 @@ const METHODS: Record<MethodKey, { category: string; icon: string; label: string
   overdue:      { category: "통계기반", icon: "⏰", label: "오버듀",     desc: "오래 안 나온 번호 위주 (미출현 주기 기반)" },
   recent20:     { category: "통계기반", icon: "📅", label: "최근20회",   desc: "최근 20회 고빈도 번호 집중" },
   spread:       { category: "균형기반", icon: "🌐", label: "분산커버",   desc: "세트 간 번호 중복 최소화 · 더 많은 번호 커버" },
+  recent10:     { category: "통계기반", icon: "🔥", label: "최근10회",   desc: "최근 10회 고빈도 번호 3배 가중 · 단기 트렌드 집중" },
+  midbias:      { category: "패턴기반", icon: "🎯", label: "중간대가중",  desc: "10-19 구간 1.5배 보강 · 통계 사각지대 공략" },
 };
 
 const CATEGORY_GROUPS = [
   { cat: "개인화",  keys: ["fav"] as MethodKey[] },
   { cat: "베이지안", keys: ["bayes", "bayes_overdue"] as MethodKey[] },
-  { cat: "통계기반", keys: ["hot", "cold", "pairs", "carryover", "norepeat", "overdue", "recent20"] as MethodKey[] },
-  { cat: "패턴기반", keys: ["pattern", "hot_pattern", "cold_pattern", "ac", "prime"] as MethodKey[] },
+  { cat: "통계기반", keys: ["hot", "cold", "pairs", "carryover", "norepeat", "overdue", "recent20", "recent10"] as MethodKey[] },
+  { cat: "패턴기반", keys: ["pattern", "hot_pattern", "cold_pattern", "ac", "prime", "midbias"] as MethodKey[] },
   { cat: "균형기반", keys: ["random", "balance", "section", "ending", "spread"] as MethodKey[] },
 ];
 
@@ -499,6 +537,8 @@ function runGenerator(key: MethodKey, draws: DrawRow[], bayesStats?: BayesStat[]
     case "overdue":      return genOverdue(draws);
     case "recent20":     return genRecent20(draws);
     case "spread":       return genSpread(usedNumbers ?? new Set());
+    case "recent10":     return genRecent10(draws);
+    case "midbias":      return genMidBias(draws);
   }
 }
 
