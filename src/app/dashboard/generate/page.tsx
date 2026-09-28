@@ -861,6 +861,29 @@ export default function GeneratePage() {
         </div>
       )}
 
+      {/* ━━━ 📢 최근 업데이트 공지 ━━━ */}
+      <div className="mb-5 border border-blue-200 rounded-2xl bg-blue-50 p-4">
+        <div className="flex items-center gap-2 mb-2">
+          <span className="text-base">📢</span>
+          <h3 className="text-sm font-bold text-blue-800">최근 업데이트</h3>
+          <span className="ml-auto text-[11px] text-blue-400 font-mono">2026-09-28</span>
+        </div>
+        <ul className="space-y-1.5 text-xs text-blue-700">
+          <li className="flex items-start gap-1.5">
+            <span className="mt-0.5 text-blue-400 shrink-0">✓</span>
+            <span><span className="font-semibold">패턴필터 조건 완화</span> — 홀짝·합계 기준 오류 수정 (실제 당첨번호 60% 오필터 해결)</span>
+          </li>
+          <li className="flex items-start gap-1.5">
+            <span className="mt-0.5 text-blue-400 shrink-0">✓</span>
+            <span><span className="font-semibold">최근 10회 핫번호 전략</span> 신규 추가 — 단기 트렌드 3배 가중</span>
+          </li>
+          <li className="flex items-start gap-1.5">
+            <span className="mt-0.5 text-blue-400 shrink-0">✓</span>
+            <span><span className="font-semibold">10-19 구간 가중 전략</span> 신규 추가 — 통계 사각지대 1.5배 보강</span>
+          </li>
+        </ul>
+      </div>
+
       {/* ━━━ 🔮 오늘의 행운 번호 ━━━ */}
       <div className="mb-5">
         {(!birthdate || showBdForm) ? (
