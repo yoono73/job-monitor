@@ -1,1 +1,5 @@
-FAIL  [국토교통부] 국토안전관리원 비상임감사 모집공고 → https://www.kric.go.kr/jsp/employment/org/recruitDetail.jsp?board_seq=5573
+OK    [오산교육재단] 오산교육재단 2026년 제3회 직원 채용 공고(일반직) → https://job.cleaneye.go.kr/user/ypCareersData.do?idx=80151
+OK    [국립공원공단] [북한산도봉] 북한산국립공원도봉사무소 한시인력(환경관리, 5차) → https://www.knps.or.kr/front/portal/recruit/recruitDtl.do?menuNo=7070064&emplyId
+OK    [감사원] 2026년도 연간 감사원 공무원 경력경쟁채용 일정 변경 공고 ( → https://www.bai.go.kr/bai/notice/notification/tab03
+OK    [경기도 양주시] 2026년 양주시 보건소장(개방형직위) 채용시험 시행계획 공고 → https://www.yangju.go.kr/www/selectBbsNttView.do?key=216&amp;bbsNo=21&amp;nttNo=
+SKIP  [과학기술정보통신부] url=None 이미 처리됨
