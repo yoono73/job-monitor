@@ -502,6 +502,9 @@ const METHODS: Record<MethodKey, { category: string; icon: string; label: string
   midbias:      { category: "패턴기반", icon: "🎯", label: "중간대가중",  desc: "10-19 구간 1.5배 보강 · 통계 사각지대 공략" },
 };
 
+// 새로 추가된 전략 (드롭다운에 NEW 표시) — 신규 전략이 생기면 여기에 키를 추가하세요
+const NEW_KEYS: MethodKey[] = ["recent10", "midbias"];
+
 const CATEGORY_GROUPS = [
   { cat: "개인화",  keys: ["fav"] as MethodKey[] },
   { cat: "베이지안", keys: ["bayes", "bayes_overdue"] as MethodKey[] },
@@ -1152,6 +1155,9 @@ export default function GeneratePage() {
                     {i + 1}세트
                   </span>
                   <span className="text-base shrink-0">{m.icon}</span>
+                  {NEW_KEYS.includes(key) && (
+                    <span className="text-[10px] font-extrabold px-1.5 py-0.5 rounded bg-rose-500 text-white shrink-0">NEW</span>
+                  )}
                   <div className="flex-1 min-w-0">
                     <select
                       value={key}
@@ -1162,7 +1168,7 @@ export default function GeneratePage() {
                         <optgroup key={cat} label={`── ${cat} ──`}>
                           {keys.map(k => (
                             <option key={k} value={k}>
-                              {METHODS[k].icon} {METHODS[k].label} — {METHODS[k].desc}
+                              {NEW_KEYS.includes(k) ? "🆕 NEW · " : ""}{METHODS[k].icon} {METHODS[k].label} — {METHODS[k].desc}
                             </option>
                           ))}
                         </optgroup>
