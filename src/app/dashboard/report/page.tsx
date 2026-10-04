@@ -140,7 +140,7 @@ export default function ReportPage() {
 
   /* ── 구매 손익 (구매완료 체크한 것만) ── */
   const money = useMemo(() => {
-    const bought = judged.filter(j => j.saved.purchased);
+    const bought = judged; // 저장한 번호 전체(추첨 완료분)를 구매한 것으로 계산
     const invest = bought.length * 1000;
     const back = bought.reduce((s, j) => s + j.amount, 0);
     const big = bought.filter(j => ["1등", "2등", "3등"].includes(j.prize));
@@ -289,15 +289,16 @@ export default function ReportPage() {
 
           {/* 손익 */}
           <section className="bg-white border border-gray-200 rounded-2xl p-4 mb-4">
-            <h2 className="text-sm font-extrabold text-gray-800 mb-3">③ 구매 손익</h2>
+            <h2 className="text-sm font-extrabold text-gray-800 mb-1">③ 손익 (저장한 번호 기준)</h2>
+            <p className="text-[11px] text-gray-400 mb-3">저장한 번호를 전부 1장(₩1,000)씩 산 것으로 계산합니다. 추첨이 끝난 게임만 포함됩니다.</p>
             {money.count === 0 ? (
-              <p className="text-xs text-gray-400">'기록' 화면에서 구매완료를 체크한 번호가 아직 없어요.</p>
+              <p className="text-xs text-gray-400">추첨이 끝난 저장 번호가 아직 없어요.</p>
             ) : (
               <>
                 <div className="grid grid-cols-3 gap-2 mb-2 text-center">
                   <div className="bg-gray-50 rounded-xl p-2">
                     <p className="text-base font-extrabold text-gray-800">₩{money.invest.toLocaleString()}</p>
-                    <p className="text-[11px] text-gray-400">총 구매 ({money.count}장)</p>
+                    <p className="text-[11px] text-gray-400">저장 {money.count}게임 × ₩1,000</p>
                   </div>
                   <div className="bg-gray-50 rounded-xl p-2">
                     <p className="text-base font-extrabold text-gray-800">₩{money.back.toLocaleString()}</p>
@@ -311,7 +312,7 @@ export default function ReportPage() {
                   </div>
                 </div>
                 <p className="text-[11px] text-gray-400 mb-2">
-                  참고: 장기 평균 환급은 구매액의 약 {Math.round(PAYOUT_RATE * 100)}% (이번 구매액 기준 약 ₩{money.expected.toLocaleString()}).
+                  참고: 장기 평균 환급은 구매액의 약 {Math.round(PAYOUT_RATE * 100)}% (이번 금액 기준 약 ₩{money.expected.toLocaleString()}).
                   4·5등만 자동 집계, 1~3등은 별도 확인.
                 </p>
                 {money.big.length > 0 && (
