@@ -52,11 +52,58 @@ function judge(s: SavedRow, d: DrawRow): Judged {
   return { saved: s, match, prize, amount };
 }
 
+/* ─── 추천 세트: 번호 겹침 최소화 + 흔한 조합 회피 ─── */
+// 확률은 모든 조합이 동일합니다. 겹침을 줄여 더 많은 번호를 덮고,
+// 많은 사람이 고르는 패턴을 피해 1~3등 시 당첨금 분할 가능성을 낮춥니다.
+function isCommonPattern(nums: number[]): boolean {
+  const a = [...nums].sort((x, y) => x - y);
+  const sum = a.reduce((x, y) => x + y, 0);
+  if (sum < 100 || sum > 175) return true;
+  const odd = a.filter(n => n % 2 === 1).length;
+  if (odd < 2 || odd > 4) return true;
+  if (a.filter(n => n >= 32).length < 1) return true;      // 생일(1~31) 쏠림 방지
+  let run = 1;
+  for (let i = 1; i < 6; i++) { run = a[i] === a[i - 1] + 1 ? run + 1 : 1; if (run >= 3) return true; }
+  for (let i = 0; i < 6; i++) for (let j = i + 1; j < 6; j++) {
+    const d = a[j] - a[i];
+    let len = 2, nx = a[j] + d;
+    while (a.includes(nx)) { len++; nx += d; }
+    if (len >= 4) return true;                              // 등차수열
+  }
+  return false;
+}
+function genRecommended(count: number): number[][] {
+  const used = new Array(46).fill(0);
+  const out: number[][] = [];
+  for (let g = 0; g < count; g++) {
+    let best: number[] | null = null;
+    for (let t = 0; t < 4000 && !best; t++) {
+      const poolSize = t < 1500 ? 12 : t < 3000 ? 18 : 45;
+      const pool = Array.from({ length: 45 }, (_, i) => i + 1)
+        .sort((x, y) => used[x] + Math.random() * 0.9 - (used[y] + Math.random() * 0.9))
+        .slice(0, poolSize);
+      const pick = pool.sort(() => Math.random() - 0.5).slice(0, 6).sort((x, y) => x - y);
+      if (!isCommonPattern(pick)) best = pick;
+    }
+    const chosen = best ?? Array.from({ length: 6 }, () => 0).map((_, i) => i * 7 + 3);
+    chosen.forEach(n => { used[n]++; });
+    out.push(chosen);
+  }
+  return out;
+}
+function ballColor(n: number) {
+  if (n <= 10) return "bg-[#FBC400] text-black";
+  if (n <= 20) return "bg-[#069FDD] text-white";
+  if (n <= 30) return "bg-[#FF5757] text-white";
+  if (n <= 40) return "bg-[#AAAAAA] text-white";
+  return "bg-[#B0D840] text-black";
+}
+
 function verdict(n: number, avg: number) {
-  if (n < 30) return { label: "표본 부족", cls: "bg-gray-100 text-gray-500", z: null as number | null };
+  if (n < 30) return { label: "아직 게임이 적어요", cls: "bg-gray-100 text-gray-500", z: null as number | null };
   const z = (avg - EXP_MATCH) / Math.sqrt(VAR_MATCH / n);
-  if (Math.abs(z) < 3) return { label: "무작위와 차이 없음", cls: "bg-slate-100 text-slate-600", z };
-  return { label: "차이 감지 (재검증 필요)", cls: "bg-amber-100 text-amber-700", z };
+  if (Math.abs(z) < 3) return { label: "평균 수준 (정상 범위)", cls: "bg-slate-100 text-slate-600", z };
+  return { label: "평균과 차이 보임 (더 지켜봐요)", cls: "bg-amber-100 text-amber-700", z };
 }
 
 /* ─── Page ─── */
@@ -67,6 +114,12 @@ export default function ReportPage() {
   const [pending, setPending] = useState(0);
   const [draws, setDraws] = useState<DrawRow[]>([]);
   const [drawNoOf, setDrawNoOf] = useState<Map<string, number>>(new Map());
+  const [userId, setUserId] = useState<string | null>(null);
+  const [nextDrawNo, setNextDrawNo] = useState<number | null>(null);
+  const [recCount, setRecCount] = useState(10);
+  const [recs, setRecs] = useState<number[][] | null>(null);
+  const [recMsg, setRecMsg] = useState<string | null>(null);
+  const [recSaving, setRecSaving] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -83,9 +136,11 @@ export default function ReportPage() {
         if (data.length < 1000) break;
       }
       setDraws(all);
+      if (all.length > 0) setNextDrawNo(all[all.length - 1].draw_no + 1);
 
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
+        setUserId(user.id);
         const { data: saved } = await supabase
           .from("saved_numbers")
           .select("id,draw_no,numbers,method,category,purchased")
@@ -191,13 +246,26 @@ export default function ReportPage() {
     };
   }, [draws]);
 
+  const saveRecs = async () => {
+    if (!recs || !userId || !nextDrawNo || recSaving) return;
+    setRecSaving(true);
+    const rows = recs.map((numbers, i) => ({
+      user_id: userId, draw_no: nextDrawNo, numbers,
+      method: "분산추천", category: "균형기반", set_idx: i + 1,
+    }));
+    const { error } = await supabase.from("saved_numbers").insert(rows);
+    setRecMsg(error ? "저장에 실패했어요. 잠시 후 다시 시도해 주세요." : `${nextDrawNo}회차에 ${rows.length}게임이 저장됐어요 ✓`);
+    setRecSaving(false);
+    if (!error) setRecs(null);
+  };
+
   const pct = (x: number) => `${(x * 100).toFixed(x < 0.01 ? 3 : 2)}%`;
 
   return (
     <div className="px-4 py-5 md:px-6 lg:px-8 max-w-2xl mx-auto">
       <div className="mb-5">
-        <h1 className="text-xl font-extrabold text-gray-800">🧾 성적표</h1>
-        <p className="text-sm text-gray-400 mt-1">내 번호의 실제 성적을 무작위 기준선과 비교합니다</p>
+        <h1 className="text-xl font-extrabold text-gray-800">🧾 내 번호 리포트</h1>
+        <p className="text-sm text-gray-400 mt-1">이번 주 추천 번호와 지금까지의 기록을 한곳에서 확인해요</p>
       </div>
 
       {loading && (
@@ -209,6 +277,49 @@ export default function ReportPage() {
 
       {!loading && (
         <>
+          {/* 이번 주 추천 세트 */}
+          <section className="bg-white border border-violet-200 rounded-2xl p-4 mb-4">
+            <h2 className="text-sm font-extrabold text-violet-800 mb-1">🎯 이번 주 추천 세트{nextDrawNo ? ` (${nextDrawNo}회)` : ""}</h2>
+            <p className="text-[11px] text-gray-500 mb-3 leading-relaxed">
+              게임끼리 번호가 최대한 겹치지 않게 짜고, 많은 사람이 고르는 흔한 조합(생일 번호 쏠림·연속번호·규칙적인 간격)은 피했어요.
+              당첨 확률 자체가 올라가는 건 아니지만, 번호를 더 넓게 덮고 1~3등이 나왔을 때 나눠 갖는 사람이 적을 가능성이 커져요.
+            </p>
+            <div className="flex items-center gap-2 mb-3">
+              {[5, 10].map(c => (
+                <button key={c} onClick={() => { setRecCount(c); setRecs(null); setRecMsg(null); }}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold ${recCount === c ? "bg-violet-600 text-white" : "bg-gray-100 text-gray-500"}`}>
+                  {c}게임
+                </button>
+              ))}
+              <button onClick={() => { setRecs(genRecommended(recCount)); setRecMsg(null); }}
+                className="ml-auto px-3 py-1.5 rounded-xl text-xs font-bold bg-violet-100 text-violet-700 hover:bg-violet-200">
+                {recs ? "다시 뽑기" : "추천 받기"}
+              </button>
+            </div>
+            {recs && (
+              <>
+                <div className="space-y-2 mb-3">
+                  {recs.map((nums, i) => (
+                    <div key={i} className="flex items-center gap-1.5">
+                      <span className="w-5 text-[11px] text-gray-400 shrink-0">{i + 1}</span>
+                      {nums.map(n => (
+                        <span key={n} className={`inline-flex items-center justify-center w-8 h-8 rounded-full font-bold text-xs shrink-0 ${ballColor(n)}`}>{n}</span>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+                <p className="text-[11px] text-gray-400 mb-2">
+                  45개 중 {new Set(recs.flat()).size}개 번호를 사용했어요.
+                </p>
+                <button onClick={saveRecs} disabled={recSaving || !userId || !nextDrawNo}
+                  className="w-full py-2.5 rounded-xl text-sm font-bold bg-violet-600 text-white disabled:opacity-50">
+                  {recSaving ? "저장 중..." : `${recs.length}게임 모두 저장`}
+                </button>
+              </>
+            )}
+            {recMsg && <p className="text-xs text-emerald-600 font-semibold mt-2">{recMsg}</p>}
+          </section>
+
           {/* 읽는 법 */}
           <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 mb-4 text-xs text-amber-800 leading-relaxed">
             로또는 추첨마다 독립이라, 어떤 번호 고르기든 한 게임당 평균 일치 개수는
@@ -239,6 +350,13 @@ export default function ReportPage() {
                     <p className="text-[11px] text-gray-400">3개+ 일치(당첨)</p>
                   </div>
                 </div>
+                <p className="text-xs text-gray-600 mb-3 leading-relaxed">
+                  평균 {overall.avg.toFixed(2)}개로 기준({EXP_MATCH.toFixed(2)}개)보다{" "}
+                  <strong className={overall.avg >= EXP_MATCH ? "text-emerald-600" : "text-gray-700"}>
+                    {Math.abs(overall.avg - EXP_MATCH) < 0.1 ? "거의 같은 수준" : overall.avg > EXP_MATCH ? "조금 높은 편" : "조금 낮은 편"}
+                  </strong>이에요.
+                  가장 가까웠던 기록은 <strong>{Math.max(...overall.dist.map((c, k) => (c > 0 ? k : 0)))}개 일치</strong>예요.
+                </p>
                 <div className="space-y-1.5">
                   {overall.dist.map((c, k) => {
                     const real = c / overall.n;
@@ -265,7 +383,7 @@ export default function ReportPage() {
           <section className="bg-white border border-gray-200 rounded-2xl p-4 mb-4">
             <h2 className="text-sm font-extrabold text-gray-800 mb-1">② 전략별 성적 (기준선 비교)</h2>
             <p className="text-[11px] text-gray-400 mb-3">
-              표본 30게임 미만은 판단 불가, z 절댓값 3 미만이면 무작위와 구분되지 않습니다.
+              30게임 미만은 아직 판단하기 이르고, 평균 수준이면 운의 범위 안이라는 뜻이에요.
             </p>
             {byMethod.length === 0 ? (
               <p className="text-xs text-gray-400">데이터가 없어요.</p>

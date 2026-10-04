@@ -866,9 +866,17 @@ export default function GeneratePage() {
         <div className="flex items-center gap-2 mb-2">
           <span className="text-base">📢</span>
           <h3 className="text-sm font-bold text-blue-800">최근 업데이트</h3>
-          <span className="ml-auto text-[11px] text-blue-400 font-mono">2026-09-28</span>
+          <span className="ml-auto text-[11px] text-blue-400 font-mono">2026-10-04</span>
         </div>
         <ul className="space-y-1.5 text-xs text-blue-700">
+          <li className="flex items-start gap-1.5">
+            <span className="mt-0.5 text-blue-400 shrink-0">✓</span>
+            <span><span className="font-semibold">내 번호 리포트</span> 신규 — 이번 주 추천 세트(게임끼리 번호 겹침 최소화·흔한 조합 회피)와 기록·손익을 한곳에서 확인</span>
+          </li>
+          <li className="flex items-start gap-1.5">
+            <span className="mt-0.5 text-blue-400 shrink-0">✓</span>
+            <span><span className="font-semibold">핫/콜드 백테스트 공개</span> — 과거 1,000회 이상으로 검증한 결과를 리포트에서 확인할 수 있어요 (통계는 참고용, 당첨 확률을 높이지는 않아요)</span>
+          </li>
           <li className="flex items-start gap-1.5">
             <span className="mt-0.5 text-blue-400 shrink-0">✓</span>
             <span><span className="font-semibold">패턴필터 조건 완화</span> — 홀짝·합계 기준 오류 수정 (실제 당첨번호 60% 오필터 해결)</span>
