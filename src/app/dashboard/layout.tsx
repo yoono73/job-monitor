@@ -14,6 +14,7 @@ const MAIN_NAV = [
 // ── 헤더 우측 아이콘 2개 (덜 쓰는 메뉴) ──
 const SUB_NAV = [
   { href: "/dashboard/history", label: "기록",   icon: "📋" },
+  { href: "/dashboard/report",  label: "성적표", icon: "🧾" },
   { href: "/dashboard/profile", label: "내정보", icon: "👤" },
 ];
 
