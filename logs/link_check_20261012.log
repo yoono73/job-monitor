@@ -1,2 +1,5 @@
-OK    [경기도 하남시] 2026년 제9회 하남시 지방임기제공무원 채용시험 시행계획 공고 → https://www.hanam.go.kr/www/index.do
-OK    [민주평화통일자문회의사무처] 민주평화통일자문회의사무처 국가공무원(행정9급) 전입 희망자 모집 → https://www.puac.go.kr/ntcnBbs/detail.do
+FAIL  [한국고전번역원] 한국고전번역원 2026년 4분기 직원 신규 채용 → https://www.itkc.or.kr/bbs/boardView.do?id=2&bIdx=316475&menuId=99
+OK    [고용노동부] 고용노동부 일반직 행정7급(노동기준) 공무원 경력경쟁채용시험 공 → https://www.moel.go.kr/news/notice/noticeView.do?bbs_seq=20261000416
+SKIP  [방송미디어통신위원회] url=None 이미 처리됨
+SKIP  [개인정보보호위원회] url=None 이미 처리됨
+FAIL  [부산교통공사] 2026년 도시철도 보안관 공개채용 공고 → https://www.kric.go.kr/jsp/employment/org/recruitDetail.jsp?board_seq=5583
