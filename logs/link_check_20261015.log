@@ -1,0 +1,4 @@
+FAIL  [한전KDN] 한전KDN(주) 용인지사 OA설비 유지보수 일용근로자 모집공고 → 해당사항 없음
+OK    [한국나노기술원] 2026년 6차 정규직 제한경쟁 채용 공고 → https://www.kanc.re.kr/gnb04/snb02_02.do?mode=view&page=&cid=5716&hcid=39
+FAIL  [경기도 안양시] 2026년도 제1회 안양시 개방형직위 임용시험 재공고(만안구보건 → https://www.anyang.go.kr/main/selectEminwonView.do?&amp;notAncmtSeCode=05¬_ancmt
+SKIP  [행정안전부] url=None 이미 처리됨
