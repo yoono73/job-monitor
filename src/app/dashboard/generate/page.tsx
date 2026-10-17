@@ -651,6 +651,9 @@ export default function GeneratePage() {
 
   const [setCount,    setSetCount]   = useState(5);
   const [methodKeys,  setMethodKeys] = useState<MethodKey[]>(DEFAULT_KEYS.slice(0, 5));
+  const [myPickMode,  setMyPickMode] = useState(false);
+  const [myPickNums,  setMyPickNums] = useState<Set<number>>(new Set());
+  const [showMyPickPanel, setShowMyPickPanel] = useState(false);
   const [bayesStats,  setBayesStats] = useState<BayesStat[]>([]);
 
   // 수비학 행운번호
@@ -750,6 +753,7 @@ export default function GeneratePage() {
         : prev.slice(0, n)
     );
     setSets(null);
+    if (n !== 10) { setMyPickMode(false); setShowMyPickPanel(false); setMyPickNums(new Set()); }
   };
 
   const updateMethodKey = (idx: number, key: MethodKey) => {
@@ -777,18 +781,40 @@ export default function GeneratePage() {
   const generateCustom = useCallback(() => {
     if (!ready || busy) return;
     setBusy(true); setSets(null); setSavedSets(new Set());
+    setShowMyPickPanel(false); setMyPickNums(new Set());
     setTimeout(() => {
       const usedNums = new Set<number>();
-      setSets(
-        methodKeys.map((key, i) => {
-          const numbers = runGenerator(key, draws, bayesStats, favorites, usedNums);
-          numbers.forEach(n => usedNums.add(n));
-          return { idx: i + 1, ...METHODS[key], method: METHODS[key].label, numbers };
-        })
-      );
+      const genCount = myPickMode ? setCount - 1 : setCount;
+      const generatedSets = methodKeys.slice(0, genCount).map((key, i) => {
+        const numbers = runGenerator(key, draws, bayesStats, favorites, usedNums);
+        numbers.forEach(n => usedNums.add(n));
+        return { idx: i + 1, ...METHODS[key], method: METHODS[key].label, numbers };
+      });
+      setSets(generatedSets);
+      if (myPickMode) setShowMyPickPanel(true);
       setBusy(false);
     }, 700);
-  }, [draws, ready, busy, methodKeys, bayesStats]);
+  }, [draws, ready, busy, methodKeys, bayesStats, myPickMode, setCount]);
+
+  const toggleMyPickNum = (n: number) => {
+    setMyPickNums(prev => {
+      const next = new Set(prev);
+      if (next.has(n)) { next.delete(n); return next; }
+      if (next.size >= 6) return prev;
+      next.add(n); return next;
+    });
+  };
+
+  const completeMyPick = () => {
+    if (myPickNums.size !== 6 || !sets) return;
+    const nums = Array.from(myPickNums).sort((a, b) => a - b) as Six;
+    const newSet: LottoSet = {
+      idx: setCount, icon: "✋", method: "내 픽",
+      category: "직접픽", desc: "내가 직접 선택", numbers: nums,
+    };
+    setSets(prev => prev ? [...prev, newSet] : [newSet]);
+    setShowMyPickPanel(false);
+  };
 
   const copy = (nums: Six, idx: number) => {
     navigator.clipboard.writeText(nums.join("  "));
@@ -1141,11 +1167,38 @@ export default function GeneratePage() {
                 </button>
               ))}
             </div>
+            {setCount === 10 && (
+              <button
+                onClick={() => { setMyPickMode(v => !v); setSets(null); setShowMyPickPanel(false); setMyPickNums(new Set()); }}
+                className={`mt-3 w-full flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-bold transition-all border
+                  ${myPickMode
+                    ? "bg-violet-600 text-white border-violet-700"
+                    : "bg-violet-50 text-violet-600 border-violet-200 hover:bg-violet-100"}`}
+              >
+                <span>✋</span>
+                <span>{myPickMode ? "내 픽 모드 ON — 9세트 생성 후 직접 선택" : "내 픽 모드 — 마지막 세트를 직접 고르기"}</span>
+              </button>
+            )}
           </div>
 
           {/* 세트별 방식 선택 */}
           <div className="space-y-2 mb-4">
             {Array.from({ length: setCount }).map((_, i) => {
+              const isMyPickSlot = myPickMode && i === setCount - 1;
+              if (isMyPickSlot) {
+                return (
+                  <div key={i} className="flex items-center gap-3 bg-violet-50 border border-violet-300 rounded-xl px-4 py-3">
+                    <span className="text-[11px] font-bold px-2 py-0.5 rounded-full shrink-0 bg-violet-600 text-white">
+                      {i + 1}세트
+                    </span>
+                    <span className="text-base shrink-0">✋</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-bold text-violet-700">내 픽</p>
+                      <p className="text-[11px] text-violet-400">생성 후 번호 풀에서 직접 선택</p>
+                    </div>
+                  </div>
+                );
+              }
               const key = methodKeys[i] ?? "random";
               const m = METHODS[key];
               const cc = CAT_COLOR[m.category];
@@ -1188,6 +1241,67 @@ export default function GeneratePage() {
               disabled:opacity-50 transition-all duration-150">
             {!ready ? "⏳ 데이터 준비 중..." : busy ? "🎲 생성 중..." : sets ? "🔄 다시 생성하기" : `${setCount}세트 생성하기`}
           </button>
+
+          {/* ✋ 내 픽 번호 풀 패널 */}
+          {showMyPickPanel && sets && (
+            <div className="bg-violet-50 border border-violet-300 rounded-2xl p-4 mb-5">
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <p className="text-sm font-extrabold text-violet-700">✋ 내 픽 — {setCount}번째 세트</p>
+                  <p className="text-[11px] text-violet-500 mt-0.5">
+                    9세트에 나온 번호는 <span className="font-bold text-violet-700">보라색</span>으로 표시돼요 · 6개 선택
+                    <span className="ml-2 font-bold text-violet-800">({myPickNums.size}/6)</span>
+                  </p>
+                </div>
+                {myPickNums.size > 0 && (
+                  <button onClick={() => setMyPickNums(new Set())}
+                    className="text-[11px] text-violet-400 hover:text-violet-600 underline shrink-0">
+                    초기화
+                  </button>
+                )}
+              </div>
+              {/* 번호 풀 (1~45) */}
+              {(() => {
+                const poolNums = new Set(sets.flatMap(s => s.numbers));
+                return (
+                  <div className="grid grid-cols-9 gap-1.5">
+                    {Array.from({ length: 45 }, (_, i) => i + 1).map(n => {
+                      const inPool = poolNums.has(n);
+                      const selected = myPickNums.has(n);
+                      return (
+                        <button key={n} onClick={() => toggleMyPickNum(n)}
+                          className={`aspect-square rounded-lg text-xs font-bold transition-all
+                            ${selected
+                              ? "bg-violet-600 text-white shadow-md scale-105"
+                              : inPool
+                                ? "bg-violet-200 text-violet-800 hover:bg-violet-300"
+                                : "bg-white text-gray-400 border border-gray-200 hover:bg-gray-100"
+                            }`}>
+                          {n}
+                        </button>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+              {/* 선택된 번호 미리보기 */}
+              {myPickNums.size > 0 && (
+                <div className="mt-3 flex flex-wrap gap-1.5">
+                  {Array.from(myPickNums).sort((a, b) => a - b).map(n => (
+                    <span key={n} className="px-2.5 py-1 rounded-full bg-violet-600 text-white text-xs font-bold">{n}</span>
+                  ))}
+                </div>
+              )}
+              <button
+                onClick={completeMyPick}
+                disabled={myPickNums.size !== 6}
+                className="mt-3 w-full py-3 rounded-xl font-bold text-sm transition-all
+                  bg-violet-600 hover:bg-violet-700 text-white
+                  disabled:opacity-40 disabled:cursor-not-allowed">
+                {myPickNums.size === 6 ? `✅ ${setCount}번째 세트 완성하기` : `${6 - myPickNums.size}개 더 선택하세요`}
+              </button>
+            </div>
+          )}
 
           {/* 결과 */}
           {sets && (
