@@ -1,5 +1,9 @@
-SKIP  [병무청] url=None 이미 처리됨
-OK    [국가정보원] 2026년도 국가정보원 AI경력직(특정직 5~7급) 채용 공고 → https://career.nis.go.kr:4017/support/notice/1300
-OK    [국가정보원] 2026년도 국가정보원 경력직 [특정 7급-사이버 보안기술정책] → https://career.nis.go.kr
-OK    [국가정보원] 2026년도 국가정보원 경력직 [특정 6급-네트워크 구축·운영] → https://career.nis.go.kr
-SKIP  [서울특별시 구로구 보건소] url=None 이미 처리됨
+OK    [서울올림픽기념국민체육진흥공단] 한국스포츠과학원 분석연구원(나급) 채용 공고(차세대국가대표스포츠 → https://www.sports.re.kr/front/board/job/boardView.do?board_seq=115&pageNo=1&men
+OK    [한국건강증진개발원] 한국건강증진개발원 2026년 하반기 직원(일반직) 채용 공고 → https://khepi-hr.jobnlab.co.kr/
+OK    [서울특별시 강동구] 서울특별시 강동구 일반임기제공무원 채용 재공고(뉴미디어팀장, 임 → https://www.gangdong.go.kr/web/newportal/notice/02/58998
+FAIL  [경기도 안양시] 2026년 제7회 안양시 지방임기제공무원 임용시험 시행계획 재공 → https://www.anyang.go.kr/main/selectEminwonView.do?&amp;notAncmtSeCode=05&amp;no
+SKIP  [서울특별시 송파구 의회사무국] url=None 이미 처리됨
+OK    [서울특별시 서대문구 의회사무국] 서울특별시 서대문구의회 일반임기제공무원(정책지원관) 채용시험계획 → https://www.sdmcouncil.go.kr/sdmassem/board/1/1/read/111234?
+FAIL  [서울특별시 성동구] 서울특별시 성동구 감사담당관(개방형직위) 채용 공고 → https://www.sd.go.kr/main/selectBbsNttView.do?bbsNo=185&amp;nttNo=362318&amp;key
+SKIP  [서울특별시 성동구] url=None 이미 처리됨
+SKIP  [방송미디어통신위원회] url=None 이미 처리됨
