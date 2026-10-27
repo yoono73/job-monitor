@@ -1,0 +1,10 @@
+FAIL  [평택도시공사] 2026년 제4회 평택도시공사 직원 채용 공고 → https://job.cleaneye.go.kr/user/ypCareersData.do?idx=80667
+OK    [한전KPS(주)] 한전KPS(주) 무주양수사업소 청평수력 3호기 A급 계획예방정비 → https://www.kps.co.kr/
+OK    [국민연금공단] [국민연금공단 서울북부지역본부] 공무직(시설직) 공개채용 공고 → https://www.nps.or.kr/pnsgdnc/hiregdnc/getOHAE0004M0List.do?menuId=MN24000969
+SKIP  [성평등가족부] url=None 이미 처리됨
+OK    [국회 국회입법조사처] 2026년도 제12회 국회입법조사처 공무원(일반임기제 5급, 농 → https://www.nars.go.kr/news/view.do?cmsCode=CM0028&amp;brdSeq=49806
+FAIL  [서울특별시 구로구 보건소] 서울특별시 구로구 보건소 임기제9급공무원(운동사) 채용 공고 → https://www.guro.go.kr/www/selectBbsNttView.do?bbsNo=664&amp;nttNo=241597&amp;&a
+OK    [감사원 감사연구원] 감사원[감사연구원] 일반임기제공무원 경력경쟁채용시험 공고(변경) → https://www.bai.go.kr/bai/notice/notification/tab03
+SKIP  [인천광역시 부평구] url=None 이미 처리됨
+SKIP  [성평등가족부] url=None 이미 처리됨
+SKIP  [법무부 서울지방교정청 화성직업훈련교도소] url=None 이미 처리됨
