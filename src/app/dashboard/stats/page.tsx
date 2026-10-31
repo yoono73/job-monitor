@@ -625,7 +625,7 @@ export default function StatsPage() {
               <div className="text-4xl mb-1.5">🏆</div>
               <h2 className="text-white font-extrabold text-lg tracking-tight">1등 당첨번호 패턴 분석</h2>
               <p className="text-white/70 text-xs mt-1">
-                <span className="text-teal-200 font-semibold">전체 {patternStats.total}회 분석 · 최신 회차까지 반영</span>
+                <span className="text-teal-200 font-semibold">전체 {patternStats.total}회 분석 · {(latestDraw ?? draws[draws.length - 1])?.draw_no}회차까지 반영</span>
                 <span className="text-white/40 mx-1.5">·</span>
                 <span className="text-teal-200 font-semibold">합계 · 홀짝 · 구간 · 연속번호</span>
               </p>
@@ -808,6 +808,87 @@ export default function StatsPage() {
             <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-gray-100 inline-block border"></span>보통</span>
             <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-blue-100 inline-block"></span>적게 출현</span>
           </div>
+        </div>
+      )}
+
+      {/* ── 3구간 공통 핫 번호 ── */}
+      {commonData && commonData.common.length > 0 && (
+        <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 mb-5">
+          <h3 className="text-xs font-bold text-gray-700 mb-1 flex items-center gap-1.5">
+            <span>🔥</span> 3구간 공통 핫 번호
+            <span className="ml-auto bg-rose-100 text-rose-600 text-[9px] font-extrabold px-1.5 py-0.5 rounded-full">
+              50 · 100 · 200회 모두 평균 이상
+            </span>
+          </h3>
+          <p className="text-[10px] text-gray-400 mb-3">
+            최근 50회, 100회, 200회 모두에서 기대값 이상으로 출현한 번호 — 단기·중기·장기 트렌드가 일치합니다.
+          </p>
+
+          {/* 공통 번호 볼 */}
+          <div className="flex flex-wrap gap-2 mb-4">
+            {commonData.common.map(({ n, score, c50, c100, c200 }) => (
+              <div key={n} className="flex flex-col items-center gap-0.5">
+                <div className="relative">
+                  <Ball n={n} size="md" />
+                  <span className="absolute -top-1.5 -right-1.5 bg-rose-500 text-white text-[8px] font-extrabold w-4 h-4 rounded-full flex items-center justify-center shadow">
+                    ★
+                  </span>
+                </div>
+                <span className="text-[9px] text-gray-400">{c50}/{c100}/{c200}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* 구간별 빈도 비교 표 */}
+          <div className="overflow-x-auto">
+            <table className="w-full text-[10px] text-center">
+              <thead>
+                <tr className="text-gray-400 border-b border-gray-100">
+                  <th className="pb-1 text-left">번호</th>
+                  <th className="pb-1">최근 50회</th>
+                  <th className="pb-1">최근 100회</th>
+                  <th className="pb-1">최근 200회</th>
+                  <th className="pb-1">종합점수</th>
+                </tr>
+              </thead>
+              <tbody>
+                {commonData.common.slice(0, 12).map(({ n, score, c50, c100, c200 }) => (
+                  <tr key={n} className="border-b border-gray-50 hover:bg-rose-50 transition-colors">
+                    <td className="py-1 text-left">
+                      <Ball n={n} size="sm" />
+                    </td>
+                    <td className="py-1 font-bold text-rose-600">{c50}회</td>
+                    <td className="py-1 font-bold text-orange-600">{c100}회</td>
+                    <td className="py-1 font-bold text-amber-600">{c200}회</td>
+                    <td className="py-1">
+                      <span className="bg-rose-100 text-rose-700 font-extrabold px-1.5 py-0.5 rounded">
+                        {score}위합
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* 2구간 공통 (참고) */}
+          {commonData.twoOnly.length > 0 && (
+            <div className="mt-3 pt-3 border-t border-gray-100">
+              <p className="text-[10px] text-gray-500 font-semibold mb-1.5">
+                📌 2구간 공통 (참고) — 3구간 중 2개 구간에서 평균 이상
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {commonData.twoOnly.map(n => (
+                  <div key={n} className="relative">
+                    <Ball n={n} size="sm" />
+                    <span className="absolute -top-1 -right-1 bg-gray-400 text-white text-[7px] font-extrabold w-3.5 h-3.5 rounded-full flex items-center justify-center">
+                      2
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -1113,86 +1194,6 @@ export default function StatsPage() {
         </div>
       </div>
 
-      {/* ── 3구간 공통 핫 번호 ── */}
-      {commonData && commonData.common.length > 0 && (
-        <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 mb-5">
-          <h3 className="text-xs font-bold text-gray-700 mb-1 flex items-center gap-1.5">
-            <span>🔥</span> 3구간 공통 핫 번호
-            <span className="ml-auto bg-rose-100 text-rose-600 text-[9px] font-extrabold px-1.5 py-0.5 rounded-full">
-              50 · 100 · 200회 모두 평균 이상
-            </span>
-          </h3>
-          <p className="text-[10px] text-gray-400 mb-3">
-            최근 50회, 100회, 200회 모두에서 기대값 이상으로 출현한 번호 — 단기·중기·장기 트렌드가 일치합니다.
-          </p>
-
-          {/* 공통 번호 볼 */}
-          <div className="flex flex-wrap gap-2 mb-4">
-            {commonData.common.map(({ n, score, c50, c100, c200 }) => (
-              <div key={n} className="flex flex-col items-center gap-0.5">
-                <div className="relative">
-                  <Ball n={n} size="md" />
-                  <span className="absolute -top-1.5 -right-1.5 bg-rose-500 text-white text-[8px] font-extrabold w-4 h-4 rounded-full flex items-center justify-center shadow">
-                    ★
-                  </span>
-                </div>
-                <span className="text-[9px] text-gray-400">{c50}/{c100}/{c200}</span>
-              </div>
-            ))}
-          </div>
-
-          {/* 구간별 빈도 비교 표 */}
-          <div className="overflow-x-auto">
-            <table className="w-full text-[10px] text-center">
-              <thead>
-                <tr className="text-gray-400 border-b border-gray-100">
-                  <th className="pb-1 text-left">번호</th>
-                  <th className="pb-1">최근 50회</th>
-                  <th className="pb-1">최근 100회</th>
-                  <th className="pb-1">최근 200회</th>
-                  <th className="pb-1">종합점수</th>
-                </tr>
-              </thead>
-              <tbody>
-                {commonData.common.slice(0, 12).map(({ n, score, c50, c100, c200 }) => (
-                  <tr key={n} className="border-b border-gray-50 hover:bg-rose-50 transition-colors">
-                    <td className="py-1 text-left">
-                      <Ball n={n} size="sm" />
-                    </td>
-                    <td className="py-1 font-bold text-rose-600">{c50}회</td>
-                    <td className="py-1 font-bold text-orange-600">{c100}회</td>
-                    <td className="py-1 font-bold text-amber-600">{c200}회</td>
-                    <td className="py-1">
-                      <span className="bg-rose-100 text-rose-700 font-extrabold px-1.5 py-0.5 rounded">
-                        {score}위합
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          {/* 2구간 공통 (참고) */}
-          {commonData.twoOnly.length > 0 && (
-            <div className="mt-3 pt-3 border-t border-gray-100">
-              <p className="text-[10px] text-gray-500 font-semibold mb-1.5">
-                📌 2구간 공통 (참고) — 3구간 중 2개 구간에서 평균 이상
-              </p>
-              <div className="flex flex-wrap gap-1.5">
-                {commonData.twoOnly.map(n => (
-                  <div key={n} className="relative">
-                    <Ball n={n} size="sm" />
-                    <span className="absolute -top-1 -right-1 bg-gray-400 text-white text-[7px] font-extrabold w-3.5 h-3.5 rounded-full flex items-center justify-center">
-                      2
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
 
       {/* ── 모델 설명 ── */}
       <div className="bg-gray-50 border border-gray-200 rounded-2xl p-4 mb-5">
