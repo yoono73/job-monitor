@@ -1070,10 +1070,17 @@ export default function StatsPage() {
             <span>🧪</span> 전략 백테스팅
             <span className="bg-rose-500 text-white text-[9px] font-extrabold px-1.5 py-0.5 rounded-full ml-1">NEW</span>
           </h3>
-          <p className="text-[10px] text-gray-400 mb-3">
+          <p className="text-[10px] text-gray-400 mb-2">
             최근 <span className="font-bold text-gray-600">200회</span> walk-forward 시뮬레이션 — 각 회차 직전 데이터만으로 번호를 선택, 실제 당첨번호와 비교한 결과입니다.
             <span className="text-amber-600 font-semibold"> 6개 중 몇 개 일치하는지</span>를 전략별로 집계합니다.
           </p>
+          <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 mb-3 flex items-start gap-2">
+            <span className="text-amber-500 text-sm shrink-0 mt-0.5">💡</span>
+            <p className="text-[11px] text-amber-800 leading-relaxed">
+              <span className="font-bold">1위 전략을 직접 써보려면</span> → <span className="font-semibold text-indigo-700">생성 페이지</span>에서 세트 수를 1~5로 설정하고, 전략 선택창에서 해당 전략을 골라 생성하세요.
+              <br /><span className="text-amber-600">예) 1위 = 콜드번호 → 생성 페이지 전략 선택 → ❄️ 콜드번호 선택 → 생성하기</span>
+            </p>
+          </div>
           <div className="space-y-2">
             {backtestResults.map((r, rank) => {
               const total = 200;

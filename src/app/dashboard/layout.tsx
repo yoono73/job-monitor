@@ -129,7 +129,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       {/* ── 업데이트 공지 배너 ── */}
       <div className="bg-gradient-to-r from-violet-600 to-indigo-600 text-white text-xs font-semibold px-4 py-2 flex items-center justify-center gap-2 flex-wrap">
         <span className="bg-white text-violet-700 text-[9px] font-extrabold px-1.5 py-0.5 rounded-full shrink-0 animate-pulse">NEW</span>
-        <span>🎉 v2.2 업데이트: 전략 백테스팅 추가 + 대량 생성 10·20·30·50세트 (5만원치) 지원</span>
+        <span>🎉 v2.3 업데이트: 번호 진단 신규 + 전략 백테스팅 + 대량 생성 10·20·30·50세트 지원</span>
       </div>
 
       {/* 본문 */}

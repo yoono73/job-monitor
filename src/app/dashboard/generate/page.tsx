@@ -29,6 +29,19 @@ interface BayesStat {
   bayesian_rank: number;
 }
 
+/* ─── 번호 진단 타입 ─── */
+interface DiagCriterion {
+  label: string;
+  pass: boolean;
+  detail: string;
+  points: number;
+}
+interface DiagResult {
+  score: number;
+  criteria: DiagCriterion[];
+  suggestion: Six | null; // AI 교체 번호
+}
+
 /* ─── Algorithm Helpers ─── */
 const getNums = (d: DrawRow) => [d.n1, d.n2, d.n3, d.n4, d.n5, d.n6];
 
@@ -749,6 +762,84 @@ const MOM_CONFIGS = [
   { icon: "📊", method: "역대최다",  category: "통계기반", desc: "전체 누적 최다 출현" },
 ];
 
+/* ─── 번호 진단 로직 ─── */
+function diagnosNumbers(nums: number[], draws: DrawRow[], bayesStats: BayesStat[]): DiagResult {
+  const sorted = [...nums].sort((a, b) => a - b);
+  const criteria: DiagCriterion[] = [];
+
+  // 1. 합계 황금구간 100~159 (15점)
+  const sum = sorted.reduce((s, n) => s + n, 0);
+  const sumPass = sum >= 100 && sum <= 159;
+  criteria.push({ label: "합계 황금구간 (100~159)", pass: sumPass, detail: `합계 ${sum}`, points: 15 });
+
+  // 2. 홀짝 비율 3:3 또는 4:2 or 2:4 (15점)
+  const oddCnt = sorted.filter(n => n % 2 === 1).length;
+  const oePass = oddCnt >= 2 && oddCnt <= 4;
+  criteria.push({ label: "홀짝 균형 (홀2~4개)", pass: oePass, detail: `홀수 ${oddCnt}개`, points: 15 });
+
+  // 3. 구간 커버 3구간 이상 (15점) - 구간: 1-15, 16-30, 31-45
+  const secs = new Set(sorted.map(n => n <= 15 ? 1 : n <= 30 ? 2 : 3));
+  const secPass = secs.size >= 2;
+  criteria.push({ label: "구간 커버 (3구간 중 2구간↑)", pass: secPass, detail: `${secs.size}구간`, points: 15 });
+
+  // 4. 베이지안 상위 (평균 순위 < 23) (15점)
+  let bayesScore = 0;
+  if (bayesStats.length > 0) {
+    const ranks = sorted.map(n => { const s = bayesStats.find(b => b.number === n); return s ? s.bayesian_rank : 45; });
+    const avgRank = ranks.reduce((s, r) => s + r, 0) / ranks.length;
+    bayesScore = avgRank;
+    const bayesPass = avgRank < 23;
+    criteria.push({ label: "베이지안 상위 (평균 순위 23위↑)", pass: bayesPass, detail: `평균 ${avgRank.toFixed(1)}위`, points: 15 });
+  } else {
+    criteria.push({ label: "베이지안 상위", pass: false, detail: "데이터 로딩 중", points: 15 });
+  }
+
+  // 5. 핫번호 포함 (최근 100회 상위 15개 중 1개 이상) (10점)
+  let hotNums: number[] = [];
+  if (draws.length >= 10) {
+    const recent = draws.slice(0, Math.min(100, draws.length));
+    const freq: Record<number, number> = {};
+    for (const d of recent) getNums(d).forEach(n => { freq[n] = (freq[n] ?? 0) + 1; });
+    hotNums = Object.entries(freq).sort(([, a], [, b]) => b - a).slice(0, 15).map(([n]) => +n);
+  }
+  const hotPass = sorted.some(n => hotNums.includes(n));
+  criteria.push({ label: "핫번호 포함 (최근 100회 상위 15)", pass: hotPass, detail: hotPass ? "포함됨" : "없음", points: 10 });
+
+  // 6. 연속번호 1쌍 이상 (10점)
+  let hasCons = false;
+  for (let i = 0; i < sorted.length - 1; i++) {
+    if (sorted[i + 1] - sorted[i] === 1) { hasCons = true; break; }
+  }
+  criteria.push({ label: "연속번호 1쌍 이상", pass: hasCons, detail: hasCons ? "있음" : "없음", points: 10 });
+
+  // 7. 끝자리 4종 이상 (10점)
+  const tails = new Set(sorted.map(n => n % 10));
+  const tailPass = tails.size >= 4;
+  criteria.push({ label: "끝자리 다양성 (4종 이상)", pass: tailPass, detail: `${tails.size}종`, points: 10 });
+
+  // 8. 3구간 공통 (통계 기반) — 최근 30회 3회 이상 등장한 번호 중 1개 이상 (10점)
+  let tripleNums: number[] = [];
+  if (draws.length >= 30) {
+    const r30 = draws.slice(0, 30);
+    const freq: Record<number, number> = {};
+    for (const d of r30) getNums(d).forEach(n => { freq[n] = (freq[n] ?? 0) + 1; });
+    tripleNums = Object.entries(freq).filter(([, v]) => v >= 3).map(([n]) => +n);
+  }
+  const triplePass = tripleNums.length > 0 && sorted.some(n => tripleNums.includes(n));
+  criteria.push({ label: "최근30회 고빈도 번호 포함", pass: triplePass, detail: triplePass ? "포함됨" : "없음", points: 10 });
+
+  const score = criteria.reduce((s, c) => c.pass ? s + c.points : s, 0);
+
+  // AI 교체 제안 (점수 < 55점이면)
+  let suggestion: Six | null = null;
+  if (score < 55 && draws.length >= 10) {
+    // 균형선택 전략으로 교체 번호 생성
+    suggestion = genBalance();
+  }
+
+  return { score, criteria, suggestion };
+}
+
 /* ─── Page ─── */
 export default function GeneratePage() {
   const supabase = useMemo(() => createClient(), []);
@@ -772,6 +863,33 @@ export default function GeneratePage() {
   const [myPickNums,  setMyPickNums] = useState<Set<number>>(new Set());
   const [showMyPickPanel, setShowMyPickPanel] = useState(false);
   const [bayesStats,  setBayesStats] = useState<BayesStat[]>([]);
+
+  // 번호 진단
+  const [showDiagnosis, setShowDiagnosis] = useState(false);
+  const [diagNums,      setDiagNums]      = useState<Set<number>>(new Set());
+  const [diagResult,    setDiagResult]    = useState<DiagResult | null>(null);
+
+  const toggleDiagNum = (n: number) => {
+    setDiagNums(prev => {
+      const next = new Set(prev);
+      if (next.has(n)) { next.delete(n); }
+      else if (next.size < 6) { next.add(n); }
+      setDiagResult(null);
+      return next;
+    });
+  };
+
+  const runDiagnosis = () => {
+    if (diagNums.size !== 6) return;
+    const result = diagnosNumbers(Array.from(diagNums), draws, bayesStats);
+    setDiagResult(result);
+  };
+
+  const useSuggestion = (nums: Six) => {
+    // 진단 번호를 AI 추천 번호로 교체
+    setDiagNums(new Set(nums));
+    setDiagResult(null);
+  };
 
   // 수비학 행운번호
   const [birthdate,   setBirthdate]  = useState<string | null>(null);
@@ -1013,33 +1131,174 @@ export default function GeneratePage() {
         <div className="flex items-center gap-2 mb-2">
           <span className="text-base">📢</span>
           <h3 className="text-sm font-bold text-blue-800">최근 업데이트</h3>
-          <span className="ml-auto text-[11px] text-blue-400 font-mono">2026-10-17</span>
+          <span className="ml-auto text-[11px] text-blue-400 font-mono">2026-11-01</span>
         </div>
         <ul className="space-y-1.5 text-xs text-blue-700">
           <li className="flex items-start gap-1.5">
-            <span className="mt-0.5 shrink-0">✋</span>
+            <span className="mt-0.5 shrink-0">🔍</span>
             <span>
-              <span className="font-semibold">내 픽 모드</span> 신규 —{" "}
-              <span className="font-semibold text-violet-700">10세트 선택 시에만</span> 활성화돼요.
-              9세트는 자동 생성되고, 마지막 10번째 세트는 나온 번호 풀에서 직접 6개를 골라 완성합니다.
-              <br />
-              <span className="text-blue-500 mt-1 block">
-                ① 세트 수 → <b>10</b> 선택 &nbsp;②&nbsp;
-                <b>내 픽 모드</b> 버튼 켜기 &nbsp;③&nbsp;
-                <b>생성하기</b> 클릭 &nbsp;④&nbsp;
-                번호 풀에서 6개 선택 → <b>완성하기</b>
-              </span>
+              <span className="font-semibold">번호 진단</span> 신규 —{" "}
+              6개 번호를 직접 입력하면 <span className="font-semibold text-indigo-700">종합 점수(0~100)</span>와 8가지 통계 기준으로 분석해줍니다.
+              낮은 점수면 AI 교체 번호까지 제안해요.
+            </span>
+          </li>
+          <li className="flex items-start gap-1.5">
+            <span className="mt-0.5 shrink-0">📊</span>
+            <span>
+              <span className="font-semibold">전략 백테스팅</span> —{" "}
+              통계 탭에서 최근 200회 시뮬레이션 결과를 확인하고, <span className="font-semibold text-amber-700">1위 전략을 직접 선택</span>해 생성하세요.
             </span>
           </li>
           <li className="flex items-start gap-1.5">
             <span className="mt-0.5 text-blue-400 shrink-0">✓</span>
-            <span><span className="font-semibold">내 번호 리포트</span> — 이번 주 추천 세트와 기록·손익을 한곳에서 확인</span>
-          </li>
-          <li className="flex items-start gap-1.5">
-            <span className="mt-0.5 text-blue-400 shrink-0">✓</span>
-            <span><span className="font-semibold">최근 10회 핫번호·10-19 구간 가중 전략</span> 신규 추가</span>
+            <span><span className="font-semibold">대량 생성</span> — 10·20·30·50세트(5만원치) 전략 자동 순환 지원</span>
           </li>
         </ul>
+      </div>
+
+      {/* ━━━ 🔍 번호 진단 ━━━ */}
+      <div className="mb-5">
+        <button
+          onClick={() => { setShowDiagnosis(v => !v); setDiagNums(new Set()); setDiagResult(null); }}
+          className="w-full flex items-center justify-between px-4 py-3 bg-gradient-to-r from-indigo-50 to-violet-50 border border-indigo-200 rounded-2xl hover:from-indigo-100 hover:to-violet-100 transition-all"
+        >
+          <div className="flex items-center gap-2">
+            <span className="text-xl">🔍</span>
+            <div className="text-left">
+              <div className="text-sm font-bold text-indigo-800">번호 진단</div>
+              <div className="text-[11px] text-indigo-500">6개 번호 입력 → 통계 기반 점수 분석</div>
+            </div>
+            <span className="bg-indigo-500 text-white text-[9px] font-extrabold px-1.5 py-0.5 rounded-full ml-1">NEW</span>
+          </div>
+          <span className="text-indigo-400 text-lg">{showDiagnosis ? "▲" : "▼"}</span>
+        </button>
+
+        {showDiagnosis && (
+          <div className="mt-2 bg-white border border-indigo-200 rounded-2xl p-4 shadow-sm">
+            {/* 번호 선택 안내 */}
+            <p className="text-xs text-gray-500 mb-3">
+              진단할 번호 6개를 선택하세요.
+              <span className="ml-1 font-semibold text-indigo-600">({diagNums.size}/6)</span>
+            </p>
+
+            {/* 1~45 번호 그리드 */}
+            <div className="grid grid-cols-9 gap-1 mb-4">
+              {Array.from({ length: 45 }, (_, i) => i + 1).map(n => {
+                const sel = diagNums.has(n);
+                return (
+                  <button
+                    key={n}
+                    onClick={() => toggleDiagNum(n)}
+                    className={`
+                      w-full aspect-square rounded-full text-[11px] font-bold transition-all
+                      ${sel
+                        ? ballColor(n) + " shadow-md scale-110"
+                        : "bg-gray-100 text-gray-500 hover:bg-gray-200"
+                      }
+                      ${!sel && diagNums.size >= 6 ? "opacity-30 cursor-not-allowed" : ""}
+                    `}
+                  >
+                    {n}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* 선택된 번호 표시 */}
+            {diagNums.size > 0 && (
+              <div className="flex items-center gap-1.5 flex-wrap mb-3">
+                {Array.from(diagNums).sort((a, b) => a - b).map(n => <Ball key={n} n={n} />)}
+              </div>
+            )}
+
+            {/* 진단하기 버튼 */}
+            <button
+              onClick={runDiagnosis}
+              disabled={diagNums.size !== 6}
+              className={`w-full py-2.5 rounded-xl font-bold text-sm transition-all mb-3
+                ${diagNums.size === 6
+                  ? "bg-indigo-600 text-white hover:bg-indigo-700 shadow-md"
+                  : "bg-gray-100 text-gray-400 cursor-not-allowed"
+                }`}
+            >
+              {diagNums.size === 6 ? "🔍 진단하기" : `${6 - diagNums.size}개 더 선택하세요`}
+            </button>
+
+            {/* 진단 결과 */}
+            {diagResult && (
+              <div className="space-y-3">
+                {/* 종합 점수 */}
+                <div className={`rounded-xl p-4 text-center border-2
+                  ${diagResult.score >= 70 ? "bg-emerald-50 border-emerald-300" :
+                    diagResult.score >= 50 ? "bg-amber-50 border-amber-300" :
+                    "bg-rose-50 border-rose-300"}`}>
+                  <div className={`text-4xl font-extrabold mb-1
+                    ${diagResult.score >= 70 ? "text-emerald-600" :
+                      diagResult.score >= 50 ? "text-amber-600" : "text-rose-600"}`}>
+                    {diagResult.score}점
+                  </div>
+                  <div className="text-sm font-semibold text-gray-600">
+                    {diagResult.score >= 70 ? "✅ 우수 — 이 번호로 생성해보세요!" :
+                     diagResult.score >= 50 ? "⚠️ 보통 — 사용 가능하지만 개선 여지 있음" :
+                     "❌ 미흡 — AI 추천 번호로 교체를 권장합니다"}
+                  </div>
+                </div>
+
+                {/* 기준별 결과 */}
+                <div className="space-y-1.5">
+                  {diagResult.criteria.map((c, i) => (
+                    <div key={i} className={`flex items-center justify-between rounded-lg px-3 py-2
+                      ${c.pass ? "bg-emerald-50" : "bg-gray-50"}`}>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm">{c.pass ? "✅" : "❌"}</span>
+                        <span className="text-xs font-medium text-gray-700">{c.label}</span>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="text-[10px] text-gray-400">{c.detail}</span>
+                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full
+                          ${c.pass ? "bg-emerald-100 text-emerald-700" : "bg-gray-100 text-gray-400"}`}>
+                          +{c.points}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* AI 추천 번호 교체 */}
+                {diagResult.suggestion && (
+                  <div className="bg-violet-50 border border-violet-200 rounded-xl p-3">
+                    <p className="text-xs font-semibold text-violet-700 mb-2">🤖 AI 추천 교체 번호</p>
+                    <div className="flex items-center gap-1.5 flex-wrap mb-3">
+                      {diagResult.suggestion.map((n, i) => <Ball key={i} n={n} />)}
+                    </div>
+                    <button
+                      onClick={() => useSuggestion(diagResult.suggestion!)}
+                      className="w-full py-2 rounded-lg bg-violet-600 text-white text-sm font-bold hover:bg-violet-700 transition"
+                    >
+                      이 번호로 교체해서 다시 진단
+                    </button>
+                  </div>
+                )}
+
+                {/* 확정 생성 버튼 */}
+                {diagResult.score >= 50 && (
+                  <button
+                    onClick={() => {
+                      const nums = Array.from(diagNums).sort((a, b) => a - b) as Six;
+                      setSets([{ idx: 1, icon: "🔍", method: "번호진단", category: "직접픽", desc: `진단점수 ${diagResult.score}점`, numbers: nums }]);
+                      setSavedSets(new Set());
+                      setShowDiagnosis(false);
+                      window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
+                    }}
+                    className="w-full py-2.5 rounded-xl bg-indigo-600 text-white font-bold text-sm hover:bg-indigo-700 transition shadow-md"
+                  >
+                    ✅ 이 번호로 생성하기
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* ━━━ 🔮 오늘의 행운 번호 ━━━ */}
