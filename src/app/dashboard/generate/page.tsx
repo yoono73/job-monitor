@@ -864,11 +864,12 @@ export default function GeneratePage() {
 
   const updateSetCount = (n: number) => {
     setSetCount(n);
-    setMethodKeys(prev =>
-      n > prev.length
-        ? [...prev, ...DEFAULT_KEYS.slice(prev.length, n)]
-        : prev.slice(0, n)
-    );
+    setMethodKeys(() => {
+      // 대량 모드: DEFAULT_KEYS를 순환하여 n개 채우기
+      const keys: MethodKey[] = [];
+      for (let i = 0; i < n; i++) keys.push(DEFAULT_KEYS[i % DEFAULT_KEYS.length]);
+      return keys;
+    });
     setSets(null);
     if (n !== 10) { setMyPickMode(false); setShowMyPickPanel(false); setMyPickNums(new Set()); }
   };
@@ -1275,9 +1276,11 @@ export default function GeneratePage() {
 
           {/* 세트 수 선택 */}
           <div className="bg-white border border-gray-200 rounded-2xl p-4 mb-3">
-            <p className="text-xs font-bold text-gray-500 mb-3">세트 수 선택</p>
-            <div className="flex gap-2">
-              {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(n => (
+            <p className="text-xs font-bold text-gray-500 mb-2">세트 수 선택</p>
+            {/* 개별 선택 1-5 */}
+            <p className="text-[10px] text-gray-400 font-semibold mb-1.5">개별 설정</p>
+            <div className="flex gap-2 mb-3">
+              {[1, 2, 3, 4, 5].map(n => (
                 <button key={n} onClick={() => updateSetCount(n)}
                   className={`flex-1 py-2 rounded-xl text-sm font-bold transition-all
                     ${setCount === n
@@ -1286,6 +1289,31 @@ export default function GeneratePage() {
                   {n}
                 </button>
               ))}
+            </div>
+            {/* 대량 선택 */}
+            <p className="text-[10px] text-gray-400 font-semibold mb-1.5">대량 구매 패키지</p>
+            <div className="grid grid-cols-4 gap-2">
+              {[
+                { n: 10, price: "1만원", color: "slate" },
+                { n: 20, price: "2만원", color: "teal" },
+                { n: 30, price: "3만원", color: "indigo" },
+                { n: 50, price: "5만원", color: "rose" },
+              ].map(({ n, price, color }) => {
+                const active = setCount === n;
+                const cls = {
+                  slate: active ? "bg-slate-700 text-white border-slate-700" : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100",
+                  teal:  active ? "bg-teal-600 text-white border-teal-600"   : "bg-teal-50 text-teal-700 border-teal-200 hover:bg-teal-100",
+                  indigo: active ? "bg-indigo-600 text-white border-indigo-600" : "bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100",
+                  rose:  active ? "bg-rose-600 text-white border-rose-600"   : "bg-rose-50 text-rose-600 border-rose-200 hover:bg-rose-100",
+                }[color];
+                return (
+                  <button key={n} onClick={() => updateSetCount(n)}
+                    className={`py-2.5 rounded-xl border font-bold transition-all text-center ${cls}`}>
+                    <div className="text-base leading-tight">{n}세트</div>
+                    <div className={`text-[10px] font-semibold ${active ? "text-white/80" : "opacity-60"}`}>{price}</div>
+                  </button>
+                );
+              })}
             </div>
             {setCount === 10 && (
               <button
@@ -1302,8 +1330,31 @@ export default function GeneratePage() {
           </div>
 
           {/* 세트별 방식 선택 */}
+          {/* 대량 모드(>10세트): 전략 자동 순환 안내 */}
+          {setCount > 10 && (
+            <div className="bg-gradient-to-r from-indigo-50 to-teal-50 border border-indigo-200 rounded-2xl p-4 mb-3">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-sm font-extrabold text-indigo-700">🔄 전략 자동 순환</span>
+                <span className="text-[10px] font-bold bg-indigo-600 text-white px-2 py-0.5 rounded-full">{setCount}세트</span>
+              </div>
+              <p className="text-[11px] text-indigo-600 mb-2">
+                {setCount}세트는 아래 {DEFAULT_KEYS.length}개 전략을 균등하게 순환하여 생성합니다.
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {DEFAULT_KEYS.map((k, i) => {
+                  const m = METHODS[k];
+                  const cc = CAT_COLOR[m.category];
+                  return (
+                    <span key={k} className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${cc.badge} ${cc.border}`}>
+                      {m.icon} {m.label}
+                    </span>
+                  );
+                })}
+              </div>
+            </div>
+          )}
           <div className="space-y-2 mb-4">
-            {Array.from({ length: setCount }).map((_, i) => {
+            {setCount <= 10 && Array.from({ length: setCount }).map((_, i) => {
               const isMyPickSlot = myPickMode && i === setCount - 1;
               if (isMyPickSlot) {
                 return (

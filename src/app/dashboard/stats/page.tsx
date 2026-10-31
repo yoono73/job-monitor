@@ -455,6 +455,138 @@ export default function StatsPage() {
     return { common: scored, twoOnly: two, above50, above100, above200 };
   }, [draws]);
 
+  /* ─── 전략 백테스팅 (walk-forward, 최근 200회 기준) ─── */
+  const backtestResults = useMemo(() => {
+    if (draws.length < 250) return null;
+
+    const pickTop6 = (scores: [number, number][]): number[] =>
+      scores.sort((a, b) => b[1] - a[1]).slice(0, 6).map(x => x[0]).sort((a, b) => a - b);
+
+    const strategies: {
+      name: string; icon: string; desc: string;
+      gen: (hist: DrawRow[]) => number[];
+    }[] = [
+      {
+        name: "🔥 핫번호", icon: "🔥", desc: "최근 100회 빈도 상위 6개",
+        gen: (hist) => {
+          const freq = new Array(46).fill(0);
+          hist.slice(-100).forEach(d => [d.n1,d.n2,d.n3,d.n4,d.n5,d.n6].forEach(n => freq[n]++));
+          return pickTop6(Array.from({length:45},(_,i)=>[i+1,freq[i+1]] as [number,number]));
+        }
+      },
+      {
+        name: "❄️ 콜드번호", icon: "❄️", desc: "최근 100회 빈도 하위 6개",
+        gen: (hist) => {
+          const freq = new Array(46).fill(0);
+          hist.slice(-100).forEach(d => [d.n1,d.n2,d.n3,d.n4,d.n5,d.n6].forEach(n => freq[n]++));
+          return Array.from({length:45},(_,i)=>[i+1,freq[i+1]] as [number,number])
+            .sort((a,b)=>a[1]-b[1]).slice(0,6).map(x=>x[0]).sort((a,b)=>a-b);
+        }
+      },
+      {
+        name: "⏰ 오버듀", icon: "⏰", desc: "최장 미출현 상위 6개",
+        gen: (hist) => {
+          const freq = new Array(46).fill(0);
+          const lastIdx = new Array(46).fill(-1);
+          hist.forEach((d,i) => [d.n1,d.n2,d.n3,d.n4,d.n5,d.n6].forEach(n => { freq[n]++; lastIdx[n]=i; }));
+          const total = hist.length;
+          const scores = Array.from({length:45},(_,i)=>i+1).map(n => {
+            const gap = freq[n]>0 ? (total-1-lastIdx[n]) : total;
+            const avg = freq[n]>0 ? total/freq[n] : total;
+            return [n, gap/avg] as [number,number];
+          });
+          return pickTop6(scores);
+        }
+      },
+      {
+        name: "🎯 3구간공통", icon: "🎯", desc: "50·100·200회 교집합",
+        gen: (hist) => {
+          const getHot = (n: number) => {
+            const recent = hist.slice(-Math.min(n, hist.length));
+            const freq = new Array(46).fill(0);
+            recent.forEach(d => [d.n1,d.n2,d.n3,d.n4,d.n5,d.n6].forEach(x => freq[x]++));
+            const exp = (recent.length * 6) / 45;
+            return new Set(Array.from({length:45},(_,i)=>i+1).filter(x => freq[x] >= exp));
+          };
+          const h50 = getHot(50), h100 = getHot(100), h200 = getHot(200);
+          const triple = Array.from({length:45},(_,i)=>i+1).filter(n=>h50.has(n)&&h100.has(n)&&h200.has(n));
+          const two = Array.from({length:45},(_,i)=>i+1).filter(n=>{
+            const c=(h50.has(n)?1:0)+(h100.has(n)?1:0)+(h200.has(n)?1:0); return c===2;
+          });
+          const pool = triple.length >= 6 ? triple : [...triple, ...two];
+          if (pool.length >= 6) return pool.slice(0,6).sort((a,b)=>a-b);
+          const freq2 = new Array(46).fill(0);
+          hist.slice(-100).forEach(d => [d.n1,d.n2,d.n3,d.n4,d.n5,d.n6].forEach(x => freq2[x]++));
+          return pickTop6(Array.from({length:45},(_,i)=>[i+1,freq2[i+1]] as [number,number]));
+        }
+      },
+      {
+        name: "⚖️ 균형선택", icon: "⚖️", desc: "합계 100-159 필터",
+        gen: (hist) => {
+          const freq = new Array(46).fill(0);
+          hist.slice(-100).forEach(d => [d.n1,d.n2,d.n3,d.n4,d.n5,d.n6].forEach(n => freq[n]++));
+          const hot = Array.from({length:45},(_,i)=>i+1).sort((a,b)=>freq[b]-freq[a]);
+          for (let s=0; s<=15; s++) {
+            const pick = hot.slice(s, s+6).sort((a,b)=>a-b);
+            const sum = pick.reduce((acc,n)=>acc+n,0);
+            if (sum>=100 && sum<=159) return pick;
+          }
+          return hot.slice(0,6).sort((a,b)=>a-b);
+        }
+      },
+      {
+        name: "🔬 패턴필터", icon: "🔬", desc: "홀짝·구간·연속 복합",
+        gen: (hist) => {
+          const freq = new Array(46).fill(0);
+          hist.slice(-100).forEach(d => [d.n1,d.n2,d.n3,d.n4,d.n5,d.n6].forEach(n => freq[n]++));
+          const hot = Array.from({length:45},(_,i)=>i+1).sort((a,b)=>freq[b]-freq[a]);
+          for (let s=0; s<=20; s++) {
+            const pick = hot.slice(s, s+6).sort((a,b)=>a-b);
+            const sum = pick.reduce((acc,n)=>acc+n,0);
+            const odd = pick.filter(n=>n%2===1).length;
+            const secs = new Set(pick.map(n=>n<=10?1:n<=20?2:n<=30?3:n<=40?4:5)).size;
+            let cons=0; for(let i=0;i<pick.length-1;i++) if(pick[i+1]-pick[i]===1) cons++;
+            if(sum>=100&&sum<=159&&(odd===3||odd===4)&&secs>=3&&cons>=1) return pick;
+          }
+          return hot.slice(0,6).sort((a,b)=>a-b);
+        }
+      },
+      {
+        name: "🎲 랜덤기준", icon: "🎲", desc: "이론 기준값 (2.2%/회)",
+        gen: (_hist) => {
+          // 고정 시드 기반 의사랜덤: 순서 섞기 (draw_no 기반)
+          const pool = Array.from({length:45},(_,i)=>i+1);
+          for (let i=pool.length-1; i>0; i--) {
+            const j = (i * 7 + 13) % (i + 1);
+            [pool[i], pool[j]] = [pool[j], pool[i]];
+          }
+          return pool.slice(0,6).sort((a,b)=>a-b);
+        }
+      },
+    ];
+
+    const TEST_SIZE = 200;
+    const testDraws = draws.slice(-TEST_SIZE);
+
+    return strategies.map(s => {
+      let m3=0, m4=0, m5=0, m6=0;
+      testDraws.forEach((draw, testIdx) => {
+        const histIdx = draws.length - TEST_SIZE + testIdx;
+        if (histIdx < 50) return;
+        const hist = draws.slice(0, histIdx);
+        const winning = [draw.n1,draw.n2,draw.n3,draw.n4,draw.n5,draw.n6];
+        const gen = s.gen(hist);
+        const match = gen.filter(n=>winning.includes(n)).length;
+        if (match>=6) m6++;
+        else if (match>=5) m5++;
+        else if (match>=4) m4++;
+        else if (match>=3) m3++;
+      });
+      const score = m5*1000 + m4*10 + m3;
+      return { name: s.name, icon: s.icon, desc: s.desc, m3, m4, m5, m6, score };
+    }).sort((a,b)=>b.score-a.score);
+  }, [draws]);
+
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] gap-3">
@@ -928,6 +1060,62 @@ export default function StatsPage() {
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* ── 🧪 전략 백테스팅 ── */}
+      {backtestResults && (
+        <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 mb-5">
+          <h3 className="text-xs font-bold text-gray-700 mb-1 flex items-center gap-1.5">
+            <span>🧪</span> 전략 백테스팅
+            <span className="bg-rose-500 text-white text-[9px] font-extrabold px-1.5 py-0.5 rounded-full ml-1">NEW</span>
+          </h3>
+          <p className="text-[10px] text-gray-400 mb-3">
+            최근 <span className="font-bold text-gray-600">200회</span> walk-forward 시뮬레이션 — 각 회차 직전 데이터만으로 번호를 선택, 실제 당첨번호와 비교한 결과입니다.
+            <span className="text-amber-600 font-semibold"> 6개 중 몇 개 일치하는지</span>를 전략별로 집계합니다.
+          </p>
+          <div className="space-y-2">
+            {backtestResults.map((r, rank) => {
+              const total = 200;
+              const hit3pct = ((r.m3 + r.m4 + r.m5 + r.m6) / total * 100).toFixed(1);
+              const isTop = rank === 0;
+              return (
+                <div key={r.name} className={`rounded-xl p-3 border transition-all ${isTop ? "bg-amber-50 border-amber-300" : "bg-gray-50 border-gray-200"}`}>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <div className="flex items-center gap-2">
+                      <span className={`text-[11px] font-extrabold w-5 h-5 rounded-full flex items-center justify-center shrink-0 ${isTop ? "bg-amber-500 text-white" : "bg-gray-300 text-gray-600"}`}>
+                        {rank + 1}
+                      </span>
+                      <span className={`text-xs font-bold ${isTop ? "text-amber-700" : "text-gray-700"}`}>{r.name}</span>
+                      <span className="text-[10px] text-gray-400">{r.desc}</span>
+                    </div>
+                    <span className={`text-[11px] font-extrabold ${isTop ? "text-amber-600" : "text-gray-500"}`}>
+                      3개↑ {hit3pct}%
+                    </span>
+                  </div>
+                  <div className="flex gap-2 text-[10px]">
+                    {r.m5 > 0 && (
+                      <span className="bg-rose-100 text-rose-700 font-extrabold px-2 py-0.5 rounded-full">
+                        5개일치 {r.m5}회
+                      </span>
+                    )}
+                    {r.m4 > 0 && (
+                      <span className="bg-orange-100 text-orange-700 font-bold px-2 py-0.5 rounded-full">
+                        4개일치 {r.m4}회
+                      </span>
+                    )}
+                    <span className="bg-gray-100 text-gray-600 font-semibold px-2 py-0.5 rounded-full">
+                      3개일치 {r.m3}회
+                    </span>
+                    <span className="text-gray-300 px-1 py-0.5">/ 200회 시뮬</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <p className="text-[9px] text-gray-300 mt-2 text-center">
+            * 각 전략은 1세트 결정론적 시뮬레이션 · 랜덤전략은 고정 시드 사용 · 로또 당첨은 순수 확률이므로 참고용입니다
+          </p>
         </div>
       )}
 
