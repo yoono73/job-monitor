@@ -585,6 +585,30 @@ function genTripleCommon(draws: DrawRow[]): Six {
   return genBalance();
 }
 
+/* ── 4조건 필터 자동 생성 ── */
+function genAutoFilter(): Six {
+  // 4조건: 합계100~159, 홀수3~4개, 볼구간3개이상(1-10/11-20/21-30/31-40/41-45), 연속1쌍이상
+  const secOf = (n: number) => n <= 10 ? 0 : n <= 20 ? 1 : n <= 30 ? 2 : n <= 40 ? 3 : 4;
+  for (let t = 0; t < 30000; t++) {
+    const nums = Array.from({ length: 45 }, (_, i) => i + 1).sort(() => Math.random() - 0.5).slice(0, 6);
+    const sorted = nums.sort((a, b) => a - b) as Six;
+    const sum = sorted.reduce((a, b) => a + b, 0);
+    const odd = sorted.filter(n => n % 2 === 1).length;
+    const secs = new Set(sorted.map(secOf));
+    const hasCons = sorted.slice(0, -1).some((n, i) => sorted[i + 1] - n === 1);
+    if (sum >= 100 && sum <= 159 && odd >= 3 && odd <= 4 && secs.size >= 3 && hasCons) return sorted;
+  }
+  // fallback: 합계+홀짝만
+  for (let t = 0; t < 10000; t++) {
+    const nums = Array.from({ length: 45 }, (_, i) => i + 1).sort(() => Math.random() - 0.5).slice(0, 6);
+    const sorted = nums.sort((a, b) => a - b) as Six;
+    const sum = sorted.reduce((a, b) => a + b, 0);
+    const odd = sorted.filter(n => n % 2 === 1).length;
+    if (sum >= 100 && sum <= 159 && odd >= 2 && odd <= 4) return sorted;
+  }
+  return genBalance();
+}
+
 /* ── 번호 분산 전략 — 세트 간 번호 중복 최소화 ── */
 function genSpread(usedNumbers: Set<number>): Six {
   const all = Array.from({ length: 45 }, (_, i) => i + 1);
@@ -869,6 +893,12 @@ export default function GeneratePage() {
   const [diagNums,      setDiagNums]      = useState<Set<number>>(new Set());
   const [diagResult,    setDiagResult]    = useState<DiagResult | null>(null);
 
+  // 조건 필터 자동 생성
+  const [showAutoFilter,   setShowAutoFilter]   = useState(false);
+  const [autoFilterCount,  setAutoFilterCount]  = useState(3);
+  const [autoFilterSets,   setAutoFilterSets]   = useState<LottoSet[] | null>(null);
+  const [autoFilterBusy,   setAutoFilterBusy]   = useState(false);
+
   const toggleDiagNum = (n: number) => {
     setDiagNums(prev => {
       const next = new Set(prev);
@@ -886,9 +916,33 @@ export default function GeneratePage() {
   };
 
   const useSuggestion = (nums: Six) => {
-    // 진단 번호를 AI 추천 번호로 교체
     setDiagNums(new Set(nums));
     setDiagResult(null);
+  };
+
+  const regenDiag = () => {
+    // 조건 통과 번호로 자동 교체 후 재진단
+    const nums = genAutoFilter();
+    setDiagNums(new Set(nums));
+    const result = diagnosNumbers(Array.from(nums), draws, bayesStats);
+    setDiagResult(result);
+  };
+
+  const runAutoFilter = () => {
+    setAutoFilterBusy(true);
+    setAutoFilterSets(null);
+    setTimeout(() => {
+      const newSets: LottoSet[] = Array.from({ length: autoFilterCount }, (_, i) => ({
+        idx: i + 1,
+        icon: "🎯",
+        method: "조건필터",
+        category: "패턴기반",
+        desc: "4조건 동시 통과",
+        numbers: genAutoFilter(),
+      }));
+      setAutoFilterSets(newSets);
+      setAutoFilterBusy(false);
+    }, 500);
   };
 
   // 수비학 행운번호
@@ -1211,18 +1265,28 @@ export default function GeneratePage() {
               </div>
             )}
 
-            {/* 진단하기 버튼 */}
-            <button
-              onClick={runDiagnosis}
-              disabled={diagNums.size !== 6}
-              className={`w-full py-2.5 rounded-xl font-bold text-sm transition-all mb-3
-                ${diagNums.size === 6
-                  ? "bg-indigo-600 text-white hover:bg-indigo-700 shadow-md"
-                  : "bg-gray-100 text-gray-400 cursor-not-allowed"
-                }`}
-            >
-              {diagNums.size === 6 ? "🔍 진단하기" : `${6 - diagNums.size}개 더 선택하세요`}
-            </button>
+            {/* 진단하기 / 초기화 버튼 */}
+            <div className="flex gap-2 mb-3">
+              <button
+                onClick={runDiagnosis}
+                disabled={diagNums.size !== 6}
+                className={`flex-1 py-2.5 rounded-xl font-bold text-sm transition-all
+                  ${diagNums.size === 6
+                    ? "bg-indigo-600 text-white hover:bg-indigo-700 shadow-md"
+                    : "bg-gray-100 text-gray-400 cursor-not-allowed"
+                  }`}
+              >
+                {diagNums.size === 6 ? "🔍 진단하기" : `${6 - diagNums.size}개 더 선택하세요`}
+              </button>
+              {diagNums.size > 0 && (
+                <button
+                  onClick={() => { setDiagNums(new Set()); setDiagResult(null); }}
+                  className="px-4 py-2.5 rounded-xl font-bold text-sm bg-gray-100 text-gray-500 hover:bg-gray-200 transition-all shrink-0"
+                >
+                  🔄 초기화
+                </button>
+              )}
+            </div>
 
             {/* 진단 결과 */}
             {diagResult && (
@@ -1264,19 +1328,23 @@ export default function GeneratePage() {
                   ))}
                 </div>
 
-                {/* AI 추천 번호 교체 */}
-                {diagResult.suggestion && (
-                  <div className="bg-violet-50 border border-violet-200 rounded-xl p-3">
-                    <p className="text-xs font-semibold text-violet-700 mb-2">🤖 AI 추천 교체 번호</p>
-                    <div className="flex items-center gap-1.5 flex-wrap mb-3">
-                      {diagResult.suggestion.map((n, i) => <Ball key={i} n={n} />)}
-                    </div>
+                {/* 점수 낮을 때 재생성 옵션 */}
+                {diagResult.score < 70 && (
+                  <div className="space-y-2">
                     <button
-                      onClick={() => useSuggestion(diagResult.suggestion!)}
-                      className="w-full py-2 rounded-lg bg-violet-600 text-white text-sm font-bold hover:bg-violet-700 transition"
+                      onClick={regenDiag}
+                      className="w-full py-2.5 rounded-xl font-bold text-sm bg-emerald-600 text-white hover:bg-emerald-700 transition shadow-md"
                     >
-                      이 번호로 교체해서 다시 진단
+                      🎯 4조건 통과 번호로 자동 교체 + 재진단
                     </button>
+                    {diagResult.suggestion && (
+                      <button
+                        onClick={() => useSuggestion(diagResult.suggestion!)}
+                        className="w-full py-2 rounded-xl text-sm font-semibold bg-violet-50 text-violet-700 border border-violet-200 hover:bg-violet-100 transition"
+                      >
+                        🤖 AI 추천 번호로 교체
+                      </button>
+                    )}
                   </div>
                 )}
 
@@ -1295,6 +1363,138 @@ export default function GeneratePage() {
                     ✅ 이 번호로 생성하기
                   </button>
                 )}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* ━━━ 🎯 조건 필터 자동 생성 ━━━ */}
+      <div className="mb-5">
+        <button
+          onClick={() => { setShowAutoFilter(v => !v); setAutoFilterSets(null); }}
+          className="w-full flex items-center justify-between px-4 py-3 bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 rounded-2xl hover:from-emerald-100 hover:to-teal-100 transition-all"
+        >
+          <div className="flex items-center gap-2">
+            <span className="text-xl">🎯</span>
+            <div className="text-left">
+              <div className="text-sm font-bold text-emerald-800">조건 필터 자동 생성</div>
+              <div className="text-[11px] text-emerald-500">4조건 동시 통과 번호만 자동 추출</div>
+            </div>
+            <span className="bg-emerald-500 text-white text-[9px] font-extrabold px-1.5 py-0.5 rounded-full ml-1">NEW</span>
+          </div>
+          <span className="text-emerald-400 text-lg">{showAutoFilter ? "▲" : "▼"}</span>
+        </button>
+
+        {showAutoFilter && (
+          <div className="mt-2 bg-white border border-emerald-200 rounded-2xl p-4 shadow-sm">
+            {/* 4조건 설명 */}
+            <div className="grid grid-cols-2 gap-2 mb-3">
+              {[
+                { icon: "📊", label: "합계 100~159", rate: "62.3%" },
+                { icon: "⚖️", label: "홀수 3~4개",   rate: "60.0%" },
+                { icon: "📍", label: "구간 3개+",    rate: "96.9%" },
+                { icon: "🔗", label: "연속 1쌍+",    rate: "51.9%" },
+              ].map(c => (
+                <div key={c.label} className="flex items-center gap-1.5 bg-emerald-50 rounded-xl px-3 py-2">
+                  <span className="text-base">{c.icon}</span>
+                  <span className="text-[11px] font-medium text-emerald-800 flex-1">{c.label}</span>
+                  <span className="text-[10px] font-bold text-emerald-600">{c.rate}</span>
+                </div>
+              ))}
+            </div>
+            <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 mb-4 text-center">
+              <span className="text-xs font-bold text-amber-700">4조건 동시 통과: </span>
+              <span className="text-base font-extrabold text-amber-800">17.6%</span>
+              <span className="text-xs text-amber-600"> (1,000회 중 176회)</span>
+            </div>
+
+            {/* 세트 수 선택 */}
+            <div className="flex items-center gap-2 mb-4">
+              <span className="text-xs font-semibold text-gray-600 shrink-0">세트 수</span>
+              <div className="flex gap-1.5 flex-wrap">
+                {[1, 2, 3, 4, 5].map(n => (
+                  <button
+                    key={n}
+                    onClick={() => setAutoFilterCount(n)}
+                    className={`w-9 h-9 rounded-full font-bold text-sm transition-all
+                      ${autoFilterCount === n
+                        ? "bg-emerald-600 text-white shadow-md"
+                        : "bg-gray-100 text-gray-500 hover:bg-emerald-50 hover:text-emerald-700"}`}
+                  >
+                    {n}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* 생성 버튼 */}
+            <button
+              onClick={runAutoFilter}
+              disabled={autoFilterBusy}
+              className={`w-full py-2.5 rounded-xl font-bold text-sm transition-all mb-4
+                ${autoFilterBusy
+                  ? "bg-gray-200 text-gray-400 cursor-not-allowed"
+                  : "bg-emerald-600 text-white hover:bg-emerald-700 shadow-md"}`}
+            >
+              {autoFilterBusy ? "⏳ 생성 중..." : `🎯 ${autoFilterCount}세트 생성하기`}
+            </button>
+
+            {/* 결과 */}
+            {autoFilterSets && (
+              <div className="space-y-3">
+                {autoFilterSets.map(s => {
+                  const sorted = [...s.numbers];
+                  const sum = sorted.reduce((a, b) => a + b, 0);
+                  const odd = sorted.filter(n => n % 2 === 1).length;
+                  const hasCons = sorted.slice(0, -1).some((n, i) => sorted[i + 1] - n === 1);
+                  return (
+                    <div key={s.idx} className="bg-emerald-50 border border-emerald-200 rounded-xl p-3">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-bold text-emerald-700">세트 {s.idx}</span>
+                        <div className="flex gap-1.5 text-[10px]">
+                          <span className="bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full font-semibold">합 {sum}</span>
+                          <span className="bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full font-semibold">홀 {odd}개</span>
+                          {hasCons && <span className="bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full font-semibold">연속 ✓</span>}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1.5 flex-wrap mb-2">
+                        {s.numbers.map((n, i) => <Ball key={i} n={n} />)}
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => { navigator.clipboard.writeText(s.numbers.join("  ")); }}
+                          className="flex-1 py-1.5 text-xs font-semibold rounded-lg bg-white border border-emerald-300 text-emerald-700 hover:bg-emerald-50 transition"
+                        >
+                          복사
+                        </button>
+                        <button
+                          onClick={() => {
+                            setDiagNums(new Set(s.numbers));
+                            setDiagResult(null);
+                            setShowDiagnosis(true);
+                            setShowAutoFilter(false);
+                            window.scrollTo({ top: 0, behavior: "smooth" });
+                          }}
+                          className="flex-1 py-1.5 text-xs font-semibold rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition"
+                        >
+                          🔍 진단하기
+                        </button>
+                        <button
+                          onClick={() => {
+                            setSets([{ idx: 1, icon: "🎯", method: "조건필터", category: "패턴기반", desc: "4조건 동시 통과", numbers: s.numbers }]);
+                            setSavedSets(new Set());
+                            setShowAutoFilter(false);
+                            window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
+                          }}
+                          className="flex-1 py-1.5 text-xs font-semibold rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition"
+                        >
+                          ✅ 사용하기
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
