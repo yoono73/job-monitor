@@ -21,7 +21,7 @@ type MethodKey =
   | "bayes" | "fav" | "prime" | "norepeat"
   | "overdue" | "recent20" | "bayes_overdue"
   | "spread" | "recent10" | "midbias"
-  | "tail_diversity" | "golden_zone" | "overdue_pick";
+  | "tail_diversity" | "golden_zone" | "overdue_pick" | "triple_common";
 
 interface BayesStat {
   number: number;
@@ -538,6 +538,40 @@ function genOverduePick(draws: DrawRow[]): Six {
   return genBalance();
 }
 
+/* ── 3구간 공통 전략 (triple_common) ── */
+function genTripleCommon(draws: DrawRow[]): Six {
+  if (draws.length < 50) return genRandom();
+  const getCounts = (n: number) => {
+    const recent = draws.slice(0, Math.min(n, draws.length)); // draws는 최신순
+    const counts = new Array(46).fill(0);
+    recent.forEach(d => [d.n1,d.n2,d.n3,d.n4,d.n5,d.n6].forEach(num => counts[num]++));
+    return { counts, total: recent.length };
+  };
+  const r50 = getCounts(50), r100 = getCounts(100), r200 = getCounts(200);
+  const exp50 = (r50.total * 6) / 45;
+  const exp100 = (r100.total * 6) / 45;
+  const exp200 = (r200.total * 6) / 45;
+  // 3구간 모두 평균 이상인 번호 = "공통 핫" 후보
+  const triple = Array.from({length:45},(_,i)=>i+1).filter(
+    n => r50.counts[n] >= exp50 && r100.counts[n] >= exp100 && r200.counts[n] >= exp200
+  );
+  // 2구간 공통도 fallback 후보로
+  const two = Array.from({length:45},(_,i)=>i+1).filter(n=>{
+    const c = (r50.counts[n]>=exp50?1:0)+(r100.counts[n]>=exp100?1:0)+(r200.counts[n]>=exp200?1:0);
+    return c===2;
+  });
+  const hotPool = triple.length >= 4 ? triple : [...triple, ...two];
+  const others = Array.from({length:45},(_,i)=>i+1).filter(n=>!hotPool.includes(n));
+  for (let t = 0; t < 5000; t++) {
+    const hotPick = Math.min(hotPool.length, Math.floor(Math.random()*2)+3); // 3~4개 핫 번호
+    const picked = [...hotPool].sort(()=>Math.random()-0.5).slice(0, hotPick);
+    const rest = [...others].sort(()=>Math.random()-0.5).slice(0, 6 - hotPick);
+    const nums = [...picked, ...rest].sort((a,b)=>a-b) as Six;
+    if (isBalanced(nums)) return nums;
+  }
+  return genBalance();
+}
+
 /* ── 번호 분산 전략 — 세트 간 번호 중복 최소화 ── */
 function genSpread(usedNumbers: Set<number>): Six {
   const all = Array.from({ length: 45 }, (_, i) => i + 1);
@@ -577,16 +611,17 @@ const METHODS: Record<MethodKey, { category: string; icon: string; label: string
   midbias:      { category: "패턴기반", icon: "🎯", label: "중간대가중",  desc: "10-19 구간 1.5배 보강 · 통계 사각지대 공략" },
   tail_diversity:{ category: "통계기반", icon: "🔟", label: "끝자리다양성", desc: "끝자리 6종 분산 · 1248회 편향 데이터 반영" },
   golden_zone:  { category: "패턴기반", icon: "🥇", label: "황금구간",    desc: "합계 120~155 · 3저3고 · 연속쌍 1개 황금조건" },
-  overdue_pick: { category: "통계기반", icon: "⏳", label: "최장공백",    desc: "20회 이상 미출현 번호 2~3개 우선 포함" },
+  overdue_pick:  { category: "통계기반", icon: "⏳", label: "최장공백",    desc: "20회 이상 미출현 번호 2~3개 우선 포함" },
+  triple_common: { category: "통계기반", icon: "🔥", label: "3구간공통",   desc: "최근 50·100·200회 모두 평균 이상 출현 번호 집중" },
 };
 
 // 새로 추가된 전략 (드롭다운에 NEW 표시) — 신규 전략이 생기면 여기에 키를 추가하세요
-const NEW_KEYS: MethodKey[] = ["tail_diversity", "golden_zone", "overdue_pick"];
+const NEW_KEYS: MethodKey[] = ["tail_diversity", "golden_zone", "overdue_pick", "triple_common"];
 
 const CATEGORY_GROUPS = [
   { cat: "개인화",  keys: ["fav"] as MethodKey[] },
   { cat: "베이지안", keys: ["bayes", "bayes_overdue"] as MethodKey[] },
-  { cat: "통계기반", keys: ["hot", "cold", "pairs", "carryover", "norepeat", "overdue", "recent20", "recent10", "tail_diversity", "overdue_pick"] as MethodKey[] },
+  { cat: "통계기반", keys: ["hot", "cold", "pairs", "carryover", "norepeat", "overdue", "recent20", "recent10", "tail_diversity", "overdue_pick", "triple_common"] as MethodKey[] },
   { cat: "패턴기반", keys: ["pattern", "hot_pattern", "cold_pattern", "ac", "prime", "midbias", "golden_zone"] as MethodKey[] },
   { cat: "균형기반", keys: ["random", "balance", "section", "ending", "spread"] as MethodKey[] },
 ];
@@ -623,6 +658,7 @@ function runGenerator(key: MethodKey, draws: DrawRow[], bayesStats?: BayesStat[]
     case "tail_diversity": return genTailDiversity(draws);
     case "golden_zone":   return genGoldenZone();
     case "overdue_pick":  return genOverduePick(draws);
+    case "triple_common": return genTripleCommon(draws);
   }
 }
 

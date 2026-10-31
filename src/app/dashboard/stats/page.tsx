@@ -395,6 +395,66 @@ export default function StatsPage() {
     return { counts, max, min, total: recent.length };
   }, [draws, heatmapMode]);
 
+  /* ─── 3구간 공통 번호 ─── */
+  const commonData = useMemo(() => {
+    if (draws.length === 0) return null;
+    const getCounts = (n: number) => {
+      const recent = draws.slice(-Math.min(n, draws.length));
+      const counts = new Array(46).fill(0);
+      recent.forEach(d => {
+        [d.n1, d.n2, d.n3, d.n4, d.n5, d.n6].forEach(num => counts[num]++);
+      });
+      return { counts, total: recent.length };
+    };
+    const r50 = getCounts(50);
+    const r100 = getCounts(100);
+    const r200 = getCounts(200);
+
+    const expected50 = (r50.total * 6) / 45;
+    const expected100 = (r100.total * 6) / 45;
+    const expected200 = (r200.total * 6) / 45;
+
+    // 각 구간에서 평균 이상인 번호를 찾고, 3구간 모두 공통인 번호 추출
+    const above50 = new Set<number>();
+    const above100 = new Set<number>();
+    const above200 = new Set<number>();
+    for (let n = 1; n <= 45; n++) {
+      if (r50.counts[n] >= expected50) above50.add(n);
+      if (r100.counts[n] >= expected100) above100.add(n);
+      if (r200.counts[n] >= expected200) above200.add(n);
+    }
+
+    // 3구간 공통
+    const common = Array.from({ length: 45 }, (_, i) => i + 1).filter(
+      n => above50.has(n) && above100.has(n) && above200.has(n)
+    );
+    // 2구간 공통 (3구간 제외)
+    const two = Array.from({ length: 45 }, (_, i) => i + 1).filter(n => {
+      const cnt = (above50.has(n) ? 1 : 0) + (above100.has(n) ? 1 : 0) + (above200.has(n) ? 1 : 0);
+      return cnt === 2;
+    });
+
+    // 각 번호의 점수(랭크합, 낮을수록 좋음) 계산
+    const rank = (counts: number[]) => {
+      const sorted = Array.from({ length: 45 }, (_, i) => ({ n: i + 1, c: counts[i + 1] }))
+        .sort((a, b) => b.c - a.c);
+      const r = new Array(46).fill(0);
+      sorted.forEach((item, idx) => { r[item.n] = idx + 1; });
+      return r;
+    };
+    const rank50 = rank(r50.counts);
+    const rank100 = rank(r100.counts);
+    const rank200 = rank(r200.counts);
+
+    const scored = common.map(n => ({
+      n,
+      score: rank50[n] + rank100[n] + rank200[n],
+      c50: r50.counts[n], c100: r100.counts[n], c200: r200.counts[n],
+    })).sort((a, b) => a.score - b.score);
+
+    return { common: scored, twoOnly: two, above50, above100, above200 };
+  }, [draws]);
+
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] gap-3">
@@ -551,6 +611,319 @@ export default function StatsPage() {
           </div>
         );
       })()}
+
+      {/* ════════════════════════════════════════════════ */}
+      {/* ── 🏆 1등 당첨번호 패턴 분석 ── */}
+      {/* ════════════════════════════════════════════════ */}
+      {patternStats && (
+        <>
+          {/* 섹션 헤더 */}
+          <div className="bg-gradient-to-br from-emerald-500 via-teal-500 to-cyan-600 rounded-2xl p-5 mb-5 shadow-lg text-center relative overflow-hidden">
+            <div className="absolute top-2 left-3 text-white/10 text-5xl select-none">🏆</div>
+            <div className="absolute bottom-2 right-3 text-white/10 text-5xl select-none">📐</div>
+            <div className="relative">
+              <div className="text-4xl mb-1.5">🏆</div>
+              <h2 className="text-white font-extrabold text-lg tracking-tight">1등 당첨번호 패턴 분석</h2>
+              <p className="text-white/70 text-xs mt-1">
+                <span className="text-teal-200 font-semibold">전체 {patternStats.total}회 분석 · 최신 회차까지 반영</span>
+                <span className="text-white/40 mx-1.5">·</span>
+                <span className="text-teal-200 font-semibold">합계 · 홀짝 · 구간 · 연속번호</span>
+              </p>
+              <p className="text-white/50 text-[11px] mt-1.5">
+                실제 1등 당첨번호 기반 조합 특성 통계
+              </p>
+            </div>
+          </div>
+
+          {/* 필터 통과율 + 세부 지표 */}
+          <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 mb-4">
+            <h3 className="text-sm font-bold text-gray-800 mb-3 flex items-center gap-2">
+              <span>🎯</span> 패턴 필터 조건별 통과율
+            </h3>
+            {/* 전체 통과율 - 크게 */}
+            <div className="bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 rounded-xl p-4 mb-4 text-center">
+              <p className="text-xs text-emerald-600 font-semibold mb-1">4조건 동시 통과</p>
+              <p className="text-4xl font-extrabold text-emerald-600 tracking-tight">
+                {((patternStats.passCount / patternStats.total) * 100).toFixed(1)}%
+              </p>
+              <p className="text-xs text-gray-400 mt-1">
+                {patternStats.total}회차 중 {patternStats.passCount}회 해당
+              </p>
+            </div>
+            {/* 조건별 개별 통과율 */}
+            <div className="grid grid-cols-2 gap-3">
+              {[
+                { label: "합계 100~159", count: patternStats.passSum, icon: "📊", color: "emerald" },
+                { label: "홀수 3~4개", count: patternStats.passOdd, icon: "⚖️", color: "violet" },
+                { label: "구간 3개+", count: patternStats.passSec, icon: "📍", color: "amber" },
+                { label: "연속 1쌍+", count: patternStats.passCon, icon: "🔗", color: "sky" },
+              ].map(({ label, count, icon, color }) => {
+                const pct = ((count / patternStats.total) * 100).toFixed(1);
+                const textCls = color === "emerald" ? "text-emerald-600" : color === "violet" ? "text-violet-600" : color === "amber" ? "text-amber-600" : "text-sky-600";
+                const bgCls = color === "emerald" ? "bg-emerald-50 border-emerald-200" : color === "violet" ? "bg-violet-50 border-violet-200" : color === "amber" ? "bg-amber-50 border-amber-200" : "bg-sky-50 border-sky-200";
+                return (
+                  <div key={label} className={`${bgCls} border rounded-xl p-3 text-center`}>
+                    <p className="text-base mb-0.5">{icon}</p>
+                    <p className={`text-xl font-extrabold ${textCls}`}>{pct}%</p>
+                    <p className="text-[10px] text-gray-400 mt-0.5">{label}</p>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* 분포 상세 차트 - 탭 전환 */}
+          <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 mb-5">
+            {/* 탭 버튼 */}
+            <div className="flex gap-1.5 mb-4 overflow-x-auto pb-1">
+              {(["sum","odd","sec","con","end"] as const).map(tab => {
+                const labels: Record<typeof tab, string> = { sum: "📊 합계분포", odd: "⚖️ 홀짝비율", sec: "📍 구간커버", con: "🔗 연속번호", end: "🔢 끝자리분산" };
+                const activeBgs: Record<string, string> = { sum: "bg-emerald-600 text-white", odd: "bg-violet-600 text-white", sec: "bg-amber-500 text-white", con: "bg-sky-500 text-white", end: "bg-sky-600 text-white" };
+                return (
+                  <button
+                    key={tab}
+                    onClick={() => setPatternTab(tab)}
+                    className={`text-[11px] px-3 py-1.5 rounded-xl font-semibold whitespace-nowrap transition shrink-0
+                      ${patternTab === tab ? activeBgs[tab] : "bg-gray-100 text-gray-500 hover:bg-gray-200"}`}
+                  >
+                    {labels[tab]}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* 탭 설명 */}
+            {patternTab === "sum" && (
+              <p className="text-[11px] text-gray-400 mb-3 bg-emerald-50 rounded-lg px-3 py-2">
+                <span className="text-emerald-600 font-bold">★ 필터 기준:</span> 합계 100~159 (6개 구간)
+                <span className="text-gray-300 mx-2">·</span> 이 범위가 역대 당첨번호에서 가장 자주 출현
+              </p>
+            )}
+            {patternTab === "odd" && (
+              <p className="text-[11px] text-gray-400 mb-3 bg-violet-50 rounded-lg px-3 py-2">
+                <span className="text-violet-600 font-bold">★ 필터 기준:</span> 홀수 3개 또는 4개
+                <span className="text-gray-300 mx-2">·</span> 3홀3짝·4홀2짝이 전체의 절반 이상 차지
+              </p>
+            )}
+            {patternTab === "sec" && (
+              <p className="text-[11px] text-gray-400 mb-3 bg-amber-50 rounded-lg px-3 py-2">
+                <span className="text-amber-600 font-bold">★ 필터 기준:</span> 구간 3개 이상
+                <span className="text-gray-300 mx-2">·</span> 구간: 1~10, 11~20, 21~30, 31~40, 41~45
+              </p>
+            )}
+            {patternTab === "con" && (
+              <p className="text-[11px] text-gray-400 mb-3 bg-sky-50 rounded-lg px-3 py-2">
+                <span className="text-sky-600 font-bold">★ 필터 기준:</span> 연속번호 1쌍 이상
+                <span className="text-gray-300 mx-2">·</span> 연속번호(예: 5,6)가 1쌍 이상 포함된 회차가 다수
+              </p>
+            )}
+            {patternTab === "end" && (
+              <p className="text-[11px] text-gray-400 mb-3 bg-sky-50 rounded-lg px-3 py-2">
+                <span className="text-sky-600 font-bold">★ 참고 지표:</span> 끝자리(일의 자리) 유니크 수
+                <span className="text-gray-300 mx-2">·</span> 끝자리 4~6종이 분산된 회차가 이상적 (1~11, 21~31 같은 편중 조합 회피)
+              </p>
+            )}
+
+            {/* 바 차트 */}
+            {tabData && (
+              <div className="space-y-0.5">
+                {tabData.labels.map((label, i) => (
+                  <PatternBar
+                    key={label}
+                    label={label}
+                    count={tabData.counts[i]}
+                    total={patternStats.total}
+                    highlight={tabData.highlight[i]}
+                    accent={tabAccents[patternTab]}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* 필터 조건 요약 카드 */}
+          <div className="bg-gradient-to-br from-gray-50 to-slate-50 border border-gray-200 rounded-2xl p-4 mb-5">
+            <h3 className="text-xs font-bold text-gray-700 mb-3 flex items-center gap-1.5">
+              <span>🔍</span> 현재 적용 중인 패턴 필터
+            </h3>
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              {[
+                { icon: "📊", label: "합계", cond: "100 ~ 159" },
+                { icon: "⚖️", label: "홀수 개수", cond: "3개 또는 4개" },
+                { icon: "📍", label: "구간 커버", cond: "3구간 이상" },
+                { icon: "🔗", label: "연속번호", cond: "1쌍 이상" },
+              ].map(({ icon, label, cond }) => (
+                <div key={label} className="flex items-start gap-2 bg-white rounded-xl p-2.5 border border-gray-100">
+                  <span className="text-base shrink-0">{icon}</span>
+                  <div>
+                    <p className="font-bold text-gray-700 text-[11px]">{label}</p>
+                    <p className="text-emerald-600 font-semibold text-[11px]">{cond}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* ── 최근 N회 번호 히트맵 ── */}
+      {heatmapData && (
+        <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 mb-5">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-xs font-bold text-gray-700 flex items-center gap-1.5">
+              <span>🔥</span> 최근 회차 번호 히트맵
+              <span className="bg-orange-100 text-orange-600 text-[9px] font-extrabold px-1.5 py-0.5 rounded-full ml-1">NEW</span>
+            </h3>
+            <div className="flex gap-1">
+              {(["50","100","200"] as const).map(m => (
+                <button
+                  key={m}
+                  onClick={() => setHeatmapMode(m)}
+                  className={`text-[10px] px-2 py-1 rounded-lg font-bold transition ${
+                    heatmapMode === m ? "bg-orange-500 text-white" : "bg-gray-100 text-gray-500 hover:bg-gray-200"
+                  }`}
+                >{m}회</button>
+              ))}
+            </div>
+          </div>
+          <p className="text-[10px] text-gray-400 mb-3 bg-orange-50 rounded-lg px-3 py-2"><span className="text-orange-600 font-bold">💡 히트맵이란?</span> 최근 {heatmapMode}회차에서 각 번호가 몇 번 나왔는지 색으로 표현 — <span className="font-semibold text-orange-700">진한 주황</span>은 자주 출현, <span className="font-semibold text-sky-600">파랑</span>은 드물게 출현. 50·100·200회 탭을 전환해 단기·중기·장기 트렌드를 비교하세요.</p>
+          <div className="grid grid-cols-9 gap-1">
+            {Array.from({ length: 45 }, (_, i) => i + 1).map(n => {
+              const c = heatmapData.counts[n];
+              const intensity = heatmapData.max > 0 ? c / heatmapData.max : 0;
+              const isHot = intensity >= 0.75;
+              const isWarm = intensity >= 0.5;
+              const isCold = intensity <= 0.2;
+              const bg = isHot ? "bg-orange-500 text-white" : isWarm ? "bg-orange-200 text-orange-800" : isCold ? "bg-blue-100 text-blue-600" : "bg-gray-100 text-gray-500";
+              return (
+                <div key={n} className={`${bg} rounded-lg text-center py-1.5 transition`} title={`${n}번: ${c}회`}>
+                  <div className="text-[10px] font-bold">{n}</div>
+                  <div className="text-[9px] opacity-80">{c}</div>
+                </div>
+              );
+            })}
+          </div>
+          <div className="flex items-center gap-3 mt-3 justify-center text-[10px] text-gray-400">
+            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-orange-500 inline-block"></span>많이 출현</span>
+            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-gray-100 inline-block border"></span>보통</span>
+            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-blue-100 inline-block"></span>적게 출현</span>
+          </div>
+        </div>
+      )}
+
+      {/* ── 끝자리 편향 차트 ── */}
+      {tailBiasData && (
+        <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 mb-5">
+          <h3 className="text-xs font-bold text-gray-700 mb-1 flex items-center gap-1.5">
+            <span>🔢</span> 끝자리(일의 자리) 출현 편향
+            <span className="bg-violet-100 text-violet-600 text-[9px] font-extrabold px-1.5 py-0.5 rounded-full ml-1">NEW</span>
+          </h3>
+          <p className="text-[10px] text-gray-400 mb-3 bg-violet-50 rounded-lg px-3 py-2"><span className="text-violet-600 font-bold">💡 끝자리 편향이란?</span> 전체 {draws.length}회 기준으로, 1~45번 각각의 일의 자리(0~9) 출현 비율을 계산합니다. 이론상 균등하면 각 끝자리 10%이지만, 실제로는 편차가 있습니다. 끝자리 다양성 전략은 이 편차를 보정하여 6가지 끝자리가 고르게 분산된 조합을 생성합니다.</p>
+          <div className="space-y-1.5">
+            {tailBiasData.map(({ tail, pct, bias }) => {
+              const isPos = bias > 0;
+              const absBias = Math.abs(bias);
+              const barW = Math.min(absBias * 4, 100);
+              return (
+                <div key={tail} className="flex items-center gap-2">
+                  <div className="w-8 shrink-0 text-center">
+                    <span className="text-[11px] font-extrabold text-gray-600">끝{tail}</span>
+                  </div>
+                  <div className="flex-1 relative h-5 bg-gray-100 rounded-full overflow-hidden">
+                    <div
+                      className={`absolute top-0 h-full rounded-full transition-all duration-700 ${
+                        isPos ? "bg-gradient-to-r from-rose-400 to-rose-500" : "bg-gradient-to-r from-sky-400 to-sky-500"
+                      }`}
+                      style={{ width: `${Math.max(barW, 1)}%` }}
+                    />
+                  </div>
+                  <div className="text-right shrink-0 w-28">
+                    <span className="text-[11px] font-bold text-gray-600">{pct.toFixed(1)}%</span>
+                    <span className={`text-[10px] ml-1 font-semibold ${isPos ? "text-rose-500" : "text-sky-500"}`}>
+                      ({isPos ? "+" : ""}{bias.toFixed(1)}%)
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <p className="text-[10px] text-gray-400 mt-3 bg-violet-50 rounded-lg px-3 py-2">
+            <span className="text-violet-600 font-bold">💡 전략 활용:</span> 끝자리 3·4 과다 출현 → 끝자리다양성 전략이 이를 보정하여 6가지 끝자리 분산 조합 생성
+          </p>
+        </div>
+      )}
+
+      {/* ── 합계 분포 황금구간 강조 그래프 ── */}
+      {patternStats && (
+        <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 mb-5">
+          <h3 className="text-xs font-bold text-gray-700 mb-1 flex items-center gap-1.5">
+            <span>🥇</span> 합계 분포 × 황금구간 분석
+            <span className="bg-amber-100 text-amber-700 text-[9px] font-extrabold px-1.5 py-0.5 rounded-full ml-1">NEW</span>
+          </h3>
+          <p className="text-[10px] text-gray-400 mb-3">역대 {patternStats.total}회 당첨번호 합계 분포 · 황금구간 120~155 강조</p>
+          <div className="space-y-1">
+            {patternStats.sum.labels.map((label, i) => {
+              const count = patternStats.sum.counts[i];
+              const pct = (count / patternStats.total * 100);
+              const isGolden = label === "120-129" || label === "130-139" || label === "140-149" || label === "150-159";
+              const isPass = patternStats.sum.highlight[i];
+              const maxCount = Math.max(...patternStats.sum.counts);
+              const barW = maxCount > 0 ? (count / maxCount * 100) : 0;
+              return (
+                <div key={label} className={`flex items-center gap-2 rounded-xl px-2 py-1 ${isGolden ? "bg-amber-50" : ""}`}>
+                  <div className="w-16 shrink-0">
+                    <span className={`text-[10px] font-semibold ${isGolden ? "text-amber-700" : isPass ? "text-emerald-600" : "text-gray-400"}`}>
+                      {label}
+                    </span>
+                  </div>
+                  <div className="flex-1 h-4 bg-gray-100 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all duration-700 ${
+                        isGolden ? "bg-gradient-to-r from-amber-400 to-yellow-500" : isPass ? "bg-gradient-to-r from-emerald-400 to-teal-400" : "bg-gray-300"
+                      }`}
+                      style={{ width: `${Math.max(barW, 0.5)}%` }}
+                    />
+                  </div>
+                  <div className="text-right shrink-0 w-20">
+                    <span className={`text-[11px] font-bold ${isGolden ? "text-amber-700" : isPass ? "text-emerald-600" : "text-gray-400"}`}>
+                      {pct.toFixed(1)}%
+                    </span>
+                    {isGolden && <span className="text-[9px] ml-1 text-amber-500">🥇</span>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <div className="mt-3 grid grid-cols-2 gap-2 text-[10px]">
+            <div className="bg-amber-50 border border-amber-100 rounded-xl p-2.5">
+              <p className="text-amber-700 font-bold mb-0.5">🥇 황금구간 (120~155)</p>
+              <p className="text-amber-600 font-extrabold text-base">
+                {(((patternStats.sum.counts[4] ?? 0) + (patternStats.sum.counts[5] ?? 0) + (patternStats.sum.counts[6] ?? 0)) / patternStats.total * 100).toFixed(1)}%
+              </p>
+              <p className="text-gray-400 mt-0.5">전체 당첨 중 이 범위</p>
+            </div>
+            <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-2.5">
+              <p className="text-emerald-700 font-bold mb-0.5">📊 필터 통과 (100~159)</p>
+              <p className="text-emerald-600 font-extrabold text-base">
+                {((patternStats.passSum / patternStats.total) * 100).toFixed(1)}%
+              </p>
+              <p className="text-gray-400 mt-0.5">패턴 필터 범위</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+
+      {/* ────────────────────────────────────────────── */}
+      {/* ── 📊 베이지안 상세 분석 ── */}
+      {/* ────────────────────────────────────────────── */}
+      <div className="flex items-center gap-3 my-4">
+        <div className="flex-1 h-px bg-gradient-to-r from-transparent via-violet-200 to-transparent" />
+        <span className="text-[11px] font-bold text-violet-400 bg-violet-50 px-3 py-1 rounded-full border border-violet-100">
+          🧮 베이지안 상세 분석
+        </span>
+        <div className="flex-1 h-px bg-gradient-to-r from-transparent via-violet-200 to-transparent" />
+      </div>
 
       {/* ── 요약 카드 4개 ── */}
       {meta && (
@@ -740,304 +1113,84 @@ export default function StatsPage() {
         </div>
       </div>
 
-      {/* ════════════════════════════════════════════════ */}
-      {/* ── 🏆 1등 당첨번호 패턴 분석 ── */}
-      {/* ════════════════════════════════════════════════ */}
-      {patternStats && (
-        <>
-          {/* 섹션 헤더 */}
-          <div className="bg-gradient-to-br from-emerald-500 via-teal-500 to-cyan-600 rounded-2xl p-5 mb-5 shadow-lg text-center relative overflow-hidden">
-            <div className="absolute top-2 left-3 text-white/10 text-5xl select-none">🏆</div>
-            <div className="absolute bottom-2 right-3 text-white/10 text-5xl select-none">📐</div>
-            <div className="relative">
-              <div className="text-4xl mb-1.5">🏆</div>
-              <h2 className="text-white font-extrabold text-lg tracking-tight">1등 당첨번호 패턴 분석</h2>
-              <p className="text-white/70 text-xs mt-1">
-                <span className="text-teal-200 font-semibold">역대 {patternStats.total}회차</span>
-                <span className="text-white/40 mx-1.5">·</span>
-                <span className="text-teal-200 font-semibold">합계 · 홀짝 · 구간 · 연속번호</span>
-              </p>
-              <p className="text-white/50 text-[11px] mt-1.5">
-                실제 1등 당첨번호 기반 조합 특성 통계
-              </p>
-            </div>
+      {/* ── 3구간 공통 핫 번호 ── */}
+      {commonData && commonData.common.length > 0 && (
+        <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 mb-5">
+          <h3 className="text-xs font-bold text-gray-700 mb-1 flex items-center gap-1.5">
+            <span>🔥</span> 3구간 공통 핫 번호
+            <span className="ml-auto bg-rose-100 text-rose-600 text-[9px] font-extrabold px-1.5 py-0.5 rounded-full">
+              50 · 100 · 200회 모두 평균 이상
+            </span>
+          </h3>
+          <p className="text-[10px] text-gray-400 mb-3">
+            최근 50회, 100회, 200회 모두에서 기대값 이상으로 출현한 번호 — 단기·중기·장기 트렌드가 일치합니다.
+          </p>
+
+          {/* 공통 번호 볼 */}
+          <div className="flex flex-wrap gap-2 mb-4">
+            {commonData.common.map(({ n, score, c50, c100, c200 }) => (
+              <div key={n} className="flex flex-col items-center gap-0.5">
+                <div className="relative">
+                  <Ball n={n} size="md" />
+                  <span className="absolute -top-1.5 -right-1.5 bg-rose-500 text-white text-[8px] font-extrabold w-4 h-4 rounded-full flex items-center justify-center shadow">
+                    ★
+                  </span>
+                </div>
+                <span className="text-[9px] text-gray-400">{c50}/{c100}/{c200}</span>
+              </div>
+            ))}
           </div>
 
-          {/* 필터 통과율 + 세부 지표 */}
-          <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 mb-4">
-            <h3 className="text-sm font-bold text-gray-800 mb-3 flex items-center gap-2">
-              <span>🎯</span> 패턴 필터 조건별 통과율
-            </h3>
-            {/* 전체 통과율 - 크게 */}
-            <div className="bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 rounded-xl p-4 mb-4 text-center">
-              <p className="text-xs text-emerald-600 font-semibold mb-1">4조건 동시 통과</p>
-              <p className="text-4xl font-extrabold text-emerald-600 tracking-tight">
-                {((patternStats.passCount / patternStats.total) * 100).toFixed(1)}%
+          {/* 구간별 빈도 비교 표 */}
+          <div className="overflow-x-auto">
+            <table className="w-full text-[10px] text-center">
+              <thead>
+                <tr className="text-gray-400 border-b border-gray-100">
+                  <th className="pb-1 text-left">번호</th>
+                  <th className="pb-1">최근 50회</th>
+                  <th className="pb-1">최근 100회</th>
+                  <th className="pb-1">최근 200회</th>
+                  <th className="pb-1">종합점수</th>
+                </tr>
+              </thead>
+              <tbody>
+                {commonData.common.slice(0, 12).map(({ n, score, c50, c100, c200 }) => (
+                  <tr key={n} className="border-b border-gray-50 hover:bg-rose-50 transition-colors">
+                    <td className="py-1 text-left">
+                      <Ball n={n} size="sm" />
+                    </td>
+                    <td className="py-1 font-bold text-rose-600">{c50}회</td>
+                    <td className="py-1 font-bold text-orange-600">{c100}회</td>
+                    <td className="py-1 font-bold text-amber-600">{c200}회</td>
+                    <td className="py-1">
+                      <span className="bg-rose-100 text-rose-700 font-extrabold px-1.5 py-0.5 rounded">
+                        {score}위합
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* 2구간 공통 (참고) */}
+          {commonData.twoOnly.length > 0 && (
+            <div className="mt-3 pt-3 border-t border-gray-100">
+              <p className="text-[10px] text-gray-500 font-semibold mb-1.5">
+                📌 2구간 공통 (참고) — 3구간 중 2개 구간에서 평균 이상
               </p>
-              <p className="text-xs text-gray-400 mt-1">
-                {patternStats.total}회차 중 {patternStats.passCount}회 해당
-              </p>
-            </div>
-            {/* 조건별 개별 통과율 */}
-            <div className="grid grid-cols-2 gap-3">
-              {[
-                { label: "합계 100~159", count: patternStats.passSum, icon: "📊", color: "emerald" },
-                { label: "홀수 3~4개", count: patternStats.passOdd, icon: "⚖️", color: "violet" },
-                { label: "구간 3개+", count: patternStats.passSec, icon: "📍", color: "amber" },
-                { label: "연속 1쌍+", count: patternStats.passCon, icon: "🔗", color: "sky" },
-              ].map(({ label, count, icon, color }) => {
-                const pct = ((count / patternStats.total) * 100).toFixed(1);
-                const textCls = color === "emerald" ? "text-emerald-600" : color === "violet" ? "text-violet-600" : color === "amber" ? "text-amber-600" : "text-sky-600";
-                const bgCls = color === "emerald" ? "bg-emerald-50 border-emerald-200" : color === "violet" ? "bg-violet-50 border-violet-200" : color === "amber" ? "bg-amber-50 border-amber-200" : "bg-sky-50 border-sky-200";
-                return (
-                  <div key={label} className={`${bgCls} border rounded-xl p-3 text-center`}>
-                    <p className="text-base mb-0.5">{icon}</p>
-                    <p className={`text-xl font-extrabold ${textCls}`}>{pct}%</p>
-                    <p className="text-[10px] text-gray-400 mt-0.5">{label}</p>
+              <div className="flex flex-wrap gap-1.5">
+                {commonData.twoOnly.map(n => (
+                  <div key={n} className="relative">
+                    <Ball n={n} size="sm" />
+                    <span className="absolute -top-1 -right-1 bg-gray-400 text-white text-[7px] font-extrabold w-3.5 h-3.5 rounded-full flex items-center justify-center">
+                      2
+                    </span>
                   </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* 분포 상세 차트 - 탭 전환 */}
-          <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 mb-5">
-            {/* 탭 버튼 */}
-            <div className="flex gap-1.5 mb-4 overflow-x-auto pb-1">
-              {(["sum","odd","sec","con","end"] as const).map(tab => {
-                const labels: Record<typeof tab, string> = { sum: "📊 합계분포", odd: "⚖️ 홀짝비율", sec: "📍 구간커버", con: "🔗 연속번호", end: "🔢 끝자리분산" };
-                const activeBgs: Record<string, string> = { sum: "bg-emerald-600 text-white", odd: "bg-violet-600 text-white", sec: "bg-amber-500 text-white", con: "bg-sky-500 text-white", end: "bg-sky-600 text-white" };
-                return (
-                  <button
-                    key={tab}
-                    onClick={() => setPatternTab(tab)}
-                    className={`text-[11px] px-3 py-1.5 rounded-xl font-semibold whitespace-nowrap transition shrink-0
-                      ${patternTab === tab ? activeBgs[tab] : "bg-gray-100 text-gray-500 hover:bg-gray-200"}`}
-                  >
-                    {labels[tab]}
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* 탭 설명 */}
-            {patternTab === "sum" && (
-              <p className="text-[11px] text-gray-400 mb-3 bg-emerald-50 rounded-lg px-3 py-2">
-                <span className="text-emerald-600 font-bold">★ 필터 기준:</span> 합계 100~159 (6개 구간)
-                <span className="text-gray-300 mx-2">·</span> 이 범위가 역대 당첨번호에서 가장 자주 출현
-              </p>
-            )}
-            {patternTab === "odd" && (
-              <p className="text-[11px] text-gray-400 mb-3 bg-violet-50 rounded-lg px-3 py-2">
-                <span className="text-violet-600 font-bold">★ 필터 기준:</span> 홀수 3개 또는 4개
-                <span className="text-gray-300 mx-2">·</span> 3홀3짝·4홀2짝이 전체의 절반 이상 차지
-              </p>
-            )}
-            {patternTab === "sec" && (
-              <p className="text-[11px] text-gray-400 mb-3 bg-amber-50 rounded-lg px-3 py-2">
-                <span className="text-amber-600 font-bold">★ 필터 기준:</span> 구간 3개 이상
-                <span className="text-gray-300 mx-2">·</span> 구간: 1~10, 11~20, 21~30, 31~40, 41~45
-              </p>
-            )}
-            {patternTab === "con" && (
-              <p className="text-[11px] text-gray-400 mb-3 bg-sky-50 rounded-lg px-3 py-2">
-                <span className="text-sky-600 font-bold">★ 필터 기준:</span> 연속번호 1쌍 이상
-                <span className="text-gray-300 mx-2">·</span> 연속번호(예: 5,6)가 1쌍 이상 포함된 회차가 다수
-              </p>
-            )}
-            {patternTab === "end" && (
-              <p className="text-[11px] text-gray-400 mb-3 bg-sky-50 rounded-lg px-3 py-2">
-                <span className="text-sky-600 font-bold">★ 참고 지표:</span> 끝자리(일의 자리) 유니크 수
-                <span className="text-gray-300 mx-2">·</span> 끝자리 4~6종이 분산된 회차가 이상적 (1~11, 21~31 같은 편중 조합 회피)
-              </p>
-            )}
-
-            {/* 바 차트 */}
-            {tabData && (
-              <div className="space-y-0.5">
-                {tabData.labels.map((label, i) => (
-                  <PatternBar
-                    key={label}
-                    label={label}
-                    count={tabData.counts[i]}
-                    total={patternStats.total}
-                    highlight={tabData.highlight[i]}
-                    accent={tabAccents[patternTab]}
-                  />
                 ))}
               </div>
-            )}
-          </div>
-
-          {/* 필터 조건 요약 카드 */}
-          <div className="bg-gradient-to-br from-gray-50 to-slate-50 border border-gray-200 rounded-2xl p-4 mb-5">
-            <h3 className="text-xs font-bold text-gray-700 mb-3 flex items-center gap-1.5">
-              <span>🔍</span> 현재 적용 중인 패턴 필터
-            </h3>
-            <div className="grid grid-cols-2 gap-2 text-xs">
-              {[
-                { icon: "📊", label: "합계", cond: "100 ~ 159" },
-                { icon: "⚖️", label: "홀수 개수", cond: "3개 또는 4개" },
-                { icon: "📍", label: "구간 커버", cond: "3구간 이상" },
-                { icon: "🔗", label: "연속번호", cond: "1쌍 이상" },
-              ].map(({ icon, label, cond }) => (
-                <div key={label} className="flex items-start gap-2 bg-white rounded-xl p-2.5 border border-gray-100">
-                  <span className="text-base shrink-0">{icon}</span>
-                  <div>
-                    <p className="font-bold text-gray-700 text-[11px]">{label}</p>
-                    <p className="text-emerald-600 font-semibold text-[11px]">{cond}</p>
-                  </div>
-                </div>
-              ))}
             </div>
-          </div>
-        </>
-      )}
-
-      {/* ── 최근 N회 번호 히트맵 ── */}
-      {heatmapData && (
-        <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 mb-5">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-xs font-bold text-gray-700 flex items-center gap-1.5">
-              <span>🔥</span> 최근 회차 번호 히트맵
-              <span className="bg-orange-100 text-orange-600 text-[9px] font-extrabold px-1.5 py-0.5 rounded-full ml-1">NEW</span>
-            </h3>
-            <div className="flex gap-1">
-              {(["50","100","200"] as const).map(m => (
-                <button
-                  key={m}
-                  onClick={() => setHeatmapMode(m)}
-                  className={`text-[10px] px-2 py-1 rounded-lg font-bold transition ${
-                    heatmapMode === m ? "bg-orange-500 text-white" : "bg-gray-100 text-gray-500 hover:bg-gray-200"
-                  }`}
-                >{m}회</button>
-              ))}
-            </div>
-          </div>
-          <p className="text-[10px] text-gray-400 mb-3">최근 {heatmapMode}회차에서 각 번호의 출현 빈도 · 진할수록 자주 출현</p>
-          <div className="grid grid-cols-9 gap-1">
-            {Array.from({ length: 45 }, (_, i) => i + 1).map(n => {
-              const c = heatmapData.counts[n];
-              const intensity = heatmapData.max > 0 ? c / heatmapData.max : 0;
-              const isHot = intensity >= 0.75;
-              const isWarm = intensity >= 0.5;
-              const isCold = intensity <= 0.2;
-              const bg = isHot ? "bg-orange-500 text-white" : isWarm ? "bg-orange-200 text-orange-800" : isCold ? "bg-blue-100 text-blue-600" : "bg-gray-100 text-gray-500";
-              return (
-                <div key={n} className={`${bg} rounded-lg text-center py-1.5 transition`} title={`${n}번: ${c}회`}>
-                  <div className="text-[10px] font-bold">{n}</div>
-                  <div className="text-[9px] opacity-80">{c}</div>
-                </div>
-              );
-            })}
-          </div>
-          <div className="flex items-center gap-3 mt-3 justify-center text-[10px] text-gray-400">
-            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-orange-500 inline-block"></span>많이 출현</span>
-            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-gray-100 inline-block border"></span>보통</span>
-            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-blue-100 inline-block"></span>적게 출현</span>
-          </div>
-        </div>
-      )}
-
-      {/* ── 끝자리 편향 차트 ── */}
-      {tailBiasData && (
-        <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 mb-5">
-          <h3 className="text-xs font-bold text-gray-700 mb-1 flex items-center gap-1.5">
-            <span>🔢</span> 끝자리(일의 자리) 출현 편향
-            <span className="bg-violet-100 text-violet-600 text-[9px] font-extrabold px-1.5 py-0.5 rounded-full ml-1">NEW</span>
-          </h3>
-          <p className="text-[10px] text-gray-400 mb-3">1~1248회 전체 기준 · 기대값 대비 편차 (균등 시 0%)</p>
-          <div className="space-y-1.5">
-            {tailBiasData.map(({ tail, pct, bias }) => {
-              const isPos = bias > 0;
-              const absBias = Math.abs(bias);
-              const barW = Math.min(absBias * 4, 100);
-              return (
-                <div key={tail} className="flex items-center gap-2">
-                  <div className="w-8 shrink-0 text-center">
-                    <span className="text-[11px] font-extrabold text-gray-600">끝{tail}</span>
-                  </div>
-                  <div className="flex-1 relative h-5 bg-gray-100 rounded-full overflow-hidden">
-                    <div
-                      className={`absolute top-0 h-full rounded-full transition-all duration-700 ${
-                        isPos ? "bg-gradient-to-r from-rose-400 to-rose-500" : "bg-gradient-to-r from-sky-400 to-sky-500"
-                      }`}
-                      style={{ width: `${Math.max(barW, 1)}%` }}
-                    />
-                  </div>
-                  <div className="text-right shrink-0 w-28">
-                    <span className="text-[11px] font-bold text-gray-600">{pct.toFixed(1)}%</span>
-                    <span className={`text-[10px] ml-1 font-semibold ${isPos ? "text-rose-500" : "text-sky-500"}`}>
-                      ({isPos ? "+" : ""}{bias.toFixed(1)}%)
-                    </span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-          <p className="text-[10px] text-gray-400 mt-3 bg-violet-50 rounded-lg px-3 py-2">
-            <span className="text-violet-600 font-bold">💡 전략 활용:</span> 끝자리 3·4 과다 출현 → 끝자리다양성 전략이 이를 보정하여 6가지 끝자리 분산 조합 생성
-          </p>
-        </div>
-      )}
-
-      {/* ── 합계 분포 황금구간 강조 그래프 ── */}
-      {patternStats && (
-        <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 mb-5">
-          <h3 className="text-xs font-bold text-gray-700 mb-1 flex items-center gap-1.5">
-            <span>🥇</span> 합계 분포 × 황금구간 분석
-            <span className="bg-amber-100 text-amber-700 text-[9px] font-extrabold px-1.5 py-0.5 rounded-full ml-1">NEW</span>
-          </h3>
-          <p className="text-[10px] text-gray-400 mb-3">역대 {patternStats.total}회 당첨번호 합계 분포 · 황금구간 120~155 강조</p>
-          <div className="space-y-1">
-            {patternStats.sum.labels.map((label, i) => {
-              const count = patternStats.sum.counts[i];
-              const pct = (count / patternStats.total * 100);
-              const isGolden = label === "120-129" || label === "130-139" || label === "140-149" || label === "150-159";
-              const isPass = patternStats.sum.highlight[i];
-              const maxCount = Math.max(...patternStats.sum.counts);
-              const barW = maxCount > 0 ? (count / maxCount * 100) : 0;
-              return (
-                <div key={label} className={`flex items-center gap-2 rounded-xl px-2 py-1 ${isGolden ? "bg-amber-50" : ""}`}>
-                  <div className="w-16 shrink-0">
-                    <span className={`text-[10px] font-semibold ${isGolden ? "text-amber-700" : isPass ? "text-emerald-600" : "text-gray-400"}`}>
-                      {label}
-                    </span>
-                  </div>
-                  <div className="flex-1 h-4 bg-gray-100 rounded-full overflow-hidden">
-                    <div
-                      className={`h-full rounded-full transition-all duration-700 ${
-                        isGolden ? "bg-gradient-to-r from-amber-400 to-yellow-500" : isPass ? "bg-gradient-to-r from-emerald-400 to-teal-400" : "bg-gray-300"
-                      }`}
-                      style={{ width: `${Math.max(barW, 0.5)}%` }}
-                    />
-                  </div>
-                  <div className="text-right shrink-0 w-20">
-                    <span className={`text-[11px] font-bold ${isGolden ? "text-amber-700" : isPass ? "text-emerald-600" : "text-gray-400"}`}>
-                      {pct.toFixed(1)}%
-                    </span>
-                    {isGolden && <span className="text-[9px] ml-1 text-amber-500">🥇</span>}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-          <div className="mt-3 grid grid-cols-2 gap-2 text-[10px]">
-            <div className="bg-amber-50 border border-amber-100 rounded-xl p-2.5">
-              <p className="text-amber-700 font-bold mb-0.5">🥇 황금구간 (120~155)</p>
-              <p className="text-amber-600 font-extrabold text-base">
-                {(((patternStats.sum.counts[4] ?? 0) + (patternStats.sum.counts[5] ?? 0) + (patternStats.sum.counts[6] ?? 0)) / patternStats.total * 100).toFixed(1)}%
-              </p>
-              <p className="text-gray-400 mt-0.5">전체 당첨 중 이 범위</p>
-            </div>
-            <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-2.5">
-              <p className="text-emerald-700 font-bold mb-0.5">📊 필터 통과 (100~159)</p>
-              <p className="text-emerald-600 font-extrabold text-base">
-                {((patternStats.passSum / patternStats.total) * 100).toFixed(1)}%
-              </p>
-              <p className="text-gray-400 mt-0.5">패턴 필터 범위</p>
-            </div>
-          </div>
+          )}
         </div>
       )}
 
