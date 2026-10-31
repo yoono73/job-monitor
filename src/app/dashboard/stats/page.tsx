@@ -228,7 +228,7 @@ export default function StatsPage() {
   const [loading, setLoading] = useState(true);
   const [sortMode, setSortMode] = useState<"rank" | "number">("rank");
   const [patternTab, setPatternTab] = useState<"sum" | "odd" | "sec" | "con" | "end">("sum");
-  const [heatmapMode, setHeatmapMode] = useState<"50" | "100" | "200">("50");
+  const [heatmapMode, setHeatmapMode] = useState<"50" | "100" | "200" | "common">("50");
 
   useEffect(() => {
     Promise.all([
@@ -767,7 +767,7 @@ export default function StatsPage() {
       )}
 
       {/* ── 최근 N회 번호 히트맵 ── */}
-      {heatmapData && (
+      {(heatmapData || commonData) && (
         <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 mb-5">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-xs font-bold text-gray-700 flex items-center gap-1.5">
@@ -784,30 +784,69 @@ export default function StatsPage() {
                   }`}
                 >{m}회</button>
               ))}
+              <button
+                onClick={() => setHeatmapMode("common")}
+                className={`text-[10px] px-2 py-1 rounded-lg font-bold transition ${
+                  heatmapMode === "common" ? "bg-rose-600 text-white" : "bg-rose-50 text-rose-500 hover:bg-rose-100"
+                }`}
+              >🎯교집합</button>
             </div>
           </div>
-          <p className="text-[10px] text-gray-400 mb-3 bg-orange-50 rounded-lg px-3 py-2"><span className="text-orange-600 font-bold">💡 히트맵이란?</span> 최근 {heatmapMode}회차에서 각 번호가 몇 번 나왔는지 색으로 표현 — <span className="font-semibold text-orange-700">진한 주황</span>은 자주 출현, <span className="font-semibold text-sky-600">파랑</span>은 드물게 출현. 50·100·200회 탭을 전환해 단기·중기·장기 트렌드를 비교하세요.</p>
-          <div className="grid grid-cols-9 gap-1">
-            {Array.from({ length: 45 }, (_, i) => i + 1).map(n => {
-              const c = heatmapData.counts[n];
-              const intensity = heatmapData.max > 0 ? c / heatmapData.max : 0;
-              const isHot = intensity >= 0.75;
-              const isWarm = intensity >= 0.5;
-              const isCold = intensity <= 0.2;
-              const bg = isHot ? "bg-orange-500 text-white" : isWarm ? "bg-orange-200 text-orange-800" : isCold ? "bg-blue-100 text-blue-600" : "bg-gray-100 text-gray-500";
-              return (
-                <div key={n} className={`${bg} rounded-lg text-center py-1.5 transition`} title={`${n}번: ${c}회`}>
-                  <div className="text-[10px] font-bold">{n}</div>
-                  <div className="text-[9px] opacity-80">{c}</div>
-                </div>
-              );
-            })}
-          </div>
-          <div className="flex items-center gap-3 mt-3 justify-center text-[10px] text-gray-400">
-            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-orange-500 inline-block"></span>많이 출현</span>
-            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-gray-100 inline-block border"></span>보통</span>
-            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-blue-100 inline-block"></span>적게 출현</span>
-          </div>
+          {heatmapMode === "common" ? (
+            <>
+              <p className="text-[10px] text-gray-400 mb-3 bg-rose-50 rounded-lg px-3 py-2">
+                <span className="text-rose-600 font-bold">💡 교집합이란?</span> 최근 50·100·200회 <span className="font-semibold">모두</span>에서 평균 이상 출현한 번호 — 단기·중기·장기 트렌드가 일치하는 <span className="font-semibold text-rose-700">가장 강력한 핫 번호</span>입니다. 주황 테두리는 2구간 공통.
+              </p>
+              <div className="grid grid-cols-9 gap-1">
+                {Array.from({ length: 45 }, (_, i) => i + 1).map(n => {
+                  const isTriple = commonData?.common.some(c => c.n === n) ?? false;
+                  const isDouble = !isTriple && (commonData?.twoOnly.includes(n) ?? false);
+                  const bg = isTriple
+                    ? "bg-rose-600 text-white ring-2 ring-rose-400"
+                    : isDouble
+                    ? "bg-orange-100 text-orange-700 ring-2 ring-orange-300"
+                    : "bg-gray-100 text-gray-300";
+                  const label = isTriple ? "★" : isDouble ? "◐" : "";
+                  return (
+                    <div key={n} className={`${bg} rounded-lg text-center py-1.5 transition`} title={isTriple ? `${n}번: 3구간 공통 핫` : isDouble ? `${n}번: 2구간 공통` : `${n}번: 해당없음`}>
+                      <div className="text-[10px] font-bold">{n}</div>
+                      <div className="text-[9px] opacity-80">{label}</div>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="flex items-center gap-3 mt-3 justify-center text-[10px] text-gray-400">
+                <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-rose-600 inline-block"></span>3구간 공통 ★</span>
+                <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-orange-100 inline-block border border-orange-300"></span>2구간 공통 ◐</span>
+                <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-gray-100 inline-block border"></span>해당없음</span>
+              </div>
+            </>
+          ) : heatmapData ? (
+            <>
+              <p className="text-[10px] text-gray-400 mb-3 bg-orange-50 rounded-lg px-3 py-2"><span className="text-orange-600 font-bold">💡 히트맵이란?</span> 최근 {heatmapMode}회차에서 각 번호가 몇 번 나왔는지 색으로 표현 — <span className="font-semibold text-orange-700">진한 주황</span>은 자주 출현, <span className="font-semibold text-sky-600">파랑</span>은 드물게 출현. 50·100·200회 탭을 전환해 단기·중기·장기 트렌드를 비교하세요.</p>
+              <div className="grid grid-cols-9 gap-1">
+                {Array.from({ length: 45 }, (_, i) => i + 1).map(n => {
+                  const c = heatmapData.counts[n];
+                  const intensity = heatmapData.max > 0 ? c / heatmapData.max : 0;
+                  const isHot = intensity >= 0.75;
+                  const isWarm = intensity >= 0.5;
+                  const isCold = intensity <= 0.2;
+                  const bg = isHot ? "bg-orange-500 text-white" : isWarm ? "bg-orange-200 text-orange-800" : isCold ? "bg-blue-100 text-blue-600" : "bg-gray-100 text-gray-500";
+                  return (
+                    <div key={n} className={`${bg} rounded-lg text-center py-1.5 transition`} title={`${n}번: ${c}회`}>
+                      <div className="text-[10px] font-bold">{n}</div>
+                      <div className="text-[9px] opacity-80">{c}</div>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="flex items-center gap-3 mt-3 justify-center text-[10px] text-gray-400">
+                <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-orange-500 inline-block"></span>많이 출현</span>
+                <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-gray-100 inline-block border"></span>보통</span>
+                <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-blue-100 inline-block"></span>적게 출현</span>
+              </div>
+            </>
+          ) : null}
         </div>
       )}
 
