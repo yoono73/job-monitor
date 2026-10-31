@@ -20,7 +20,8 @@ type MethodKey =
   | "random" | "balance" | "section" | "ending"
   | "bayes" | "fav" | "prime" | "norepeat"
   | "overdue" | "recent20" | "bayes_overdue"
-  | "spread" | "recent10" | "midbias";
+  | "spread" | "recent10" | "midbias"
+  | "tail_diversity" | "golden_zone" | "overdue_pick";
 
 interface BayesStat {
   number: number;
@@ -463,6 +464,80 @@ function genTopFreq(draws: DrawRow[]): Six {
   return sel.sort((a, b) => a - b) as Six;
 }
 
+/* ── 끝자리 다양성 전략 (tail_diversity) ── */
+function genTailDiversity(draws: DrawRow[]): Six {
+  // 끝자리 4·3·1 우선 가중, 끝자리 0·6·9는 낮은 가중치, 6개 끝자리 모두 달라야 함
+  const tailWeights: Record<number, number> = {0:0.7, 1:1.3, 2:1.1, 3:1.3, 4:1.4, 5:1.1, 6:0.7, 7:0.9, 8:0.8, 9:0.7};
+  const freq = new Array(46).fill(1);
+  draws.slice(0, 100).forEach(d => [d.n1,d.n2,d.n3,d.n4,d.n5,d.n6].forEach(n => freq[n]++));
+  for (let t = 0; t < 8000; t++) {
+    const sel: number[] = [];
+    const usedTails = new Set<number>();
+    const pool = Array.from({length:45},(_,i)=>i+1).sort(()=>Math.random()-0.5);
+    for (const n of pool) {
+      if (sel.length >= 6) break;
+      const tail = n % 10;
+      if (!usedTails.has(tail)) {
+        const w = (freq[n] * tailWeights[tail]);
+        if (Math.random() < w / (w + 3)) { sel.push(n); usedTails.add(tail); }
+      }
+    }
+    if (sel.length === 6) { const s = sel.sort((a,b)=>a-b) as Six; if (isBalanced(s)) return s; }
+  }
+  // fallback: 끝자리 5개 이상만 달라도 OK
+  for (let t = 0; t < 5000; t++) {
+    const nums = Array.from({length:45},(_,i)=>i+1).sort(()=>Math.random()-0.5).slice(0,6);
+    const tails = new Set(nums.map(n=>n%10));
+    if (tails.size >= 5 && isBalanced(nums)) return nums.sort((a,b)=>a-b) as Six;
+  }
+  return genBalance();
+}
+
+/* ── 황금구간 전략 (golden_zone) ── */
+function genGoldenZone(): Six {
+  // 합계 120~155, 3저3고(1-22 vs 23-45), 연속쌍 1개
+  for (let t = 0; t < 10000; t++) {
+    const nums = Array.from({length:45},(_,i)=>i+1).sort(()=>Math.random()-0.5).slice(0,6);
+    const sum = nums.reduce((a,b)=>a+b,0);
+    const low = nums.filter(n=>n<=22).length;
+    const sorted = nums.sort((a,b)=>a-b);
+    const cons = sorted.slice(0,-1).filter((n,i)=>sorted[i+1]-n===1).length;
+    if (sum>=120 && sum<=155 && (low===3) && cons===1) return sorted as Six;
+  }
+  // 조건 완화: 합계 110~165, 2~4저
+  for (let t = 0; t < 5000; t++) {
+    const nums = Array.from({length:45},(_,i)=>i+1).sort(()=>Math.random()-0.5).slice(0,6);
+    const sum = nums.reduce((a,b)=>a+b,0);
+    const low = nums.filter(n=>n<=22).length;
+    if (sum>=110 && sum<=165 && low>=2 && low<=4) return nums.sort((a,b)=>a-b) as Six;
+  }
+  return genBalance();
+}
+
+/* ── 최장공백 우선 전략 (overdue_pick) ── */
+function genOverduePick(draws: DrawRow[]): Six {
+  if (draws.length === 0) return genRandom();
+  // draws[0] = 최신 (내림차순)
+  const lastSeen = new Array(46).fill(draws.length);
+  draws.forEach((d,i) => [d.n1,d.n2,d.n3,d.n4,d.n5,d.n6].forEach(n=>{
+    if (lastSeen[n]===draws.length) lastSeen[n]=i;
+  }));
+  // 20회 이상 미출현 번호 우선 (없으면 10회 이상)
+  const longAbsent = Array.from({length:45},(_,i)=>i+1).filter(n=>lastSeen[n]>=20);
+  const midAbsent  = Array.from({length:45},(_,i)=>i+1).filter(n=>lastSeen[n]>=10);
+  const candidates = longAbsent.length >= 3 ? longAbsent : midAbsent.length >= 3 ? midAbsent :
+    Array.from({length:45},(_,i)=>i+1).sort((a,b)=>lastSeen[b]-lastSeen[a]).slice(0,12);
+  for (let t = 0; t < 5000; t++) {
+    const abCount = Math.min(candidates.length, Math.floor(Math.random()*2)+2); // 2~3개
+    const picked = [...candidates].sort(()=>Math.random()-0.5).slice(0,abCount);
+    const rest = Array.from({length:45},(_,i)=>i+1).filter(n=>!picked.includes(n))
+      .sort(()=>Math.random()-0.5).slice(0,6-abCount);
+    const nums = [...picked,...rest].sort((a,b)=>a-b) as Six;
+    if (isBalanced(nums)) return nums;
+  }
+  return genBalance();
+}
+
 /* ── 번호 분산 전략 — 세트 간 번호 중복 최소화 ── */
 function genSpread(usedNumbers: Set<number>): Six {
   const all = Array.from({ length: 45 }, (_, i) => i + 1);
@@ -500,16 +575,19 @@ const METHODS: Record<MethodKey, { category: string; icon: string; label: string
   spread:       { category: "균형기반", icon: "🌐", label: "분산커버",   desc: "세트 간 번호 중복 최소화 · 더 많은 번호 커버" },
   recent10:     { category: "통계기반", icon: "🔥", label: "최근10회",   desc: "최근 10회 고빈도 번호 3배 가중 · 단기 트렌드 집중" },
   midbias:      { category: "패턴기반", icon: "🎯", label: "중간대가중",  desc: "10-19 구간 1.5배 보강 · 통계 사각지대 공략" },
+  tail_diversity:{ category: "통계기반", icon: "🔟", label: "끝자리다양성", desc: "끝자리 6종 분산 · 1248회 편향 데이터 반영" },
+  golden_zone:  { category: "패턴기반", icon: "🥇", label: "황금구간",    desc: "합계 120~155 · 3저3고 · 연속쌍 1개 황금조건" },
+  overdue_pick: { category: "통계기반", icon: "⏳", label: "최장공백",    desc: "20회 이상 미출현 번호 2~3개 우선 포함" },
 };
 
 // 새로 추가된 전략 (드롭다운에 NEW 표시) — 신규 전략이 생기면 여기에 키를 추가하세요
-const NEW_KEYS: MethodKey[] = ["recent10", "midbias"];
+const NEW_KEYS: MethodKey[] = ["tail_diversity", "golden_zone", "overdue_pick"];
 
 const CATEGORY_GROUPS = [
   { cat: "개인화",  keys: ["fav"] as MethodKey[] },
   { cat: "베이지안", keys: ["bayes", "bayes_overdue"] as MethodKey[] },
-  { cat: "통계기반", keys: ["hot", "cold", "pairs", "carryover", "norepeat", "overdue", "recent20", "recent10"] as MethodKey[] },
-  { cat: "패턴기반", keys: ["pattern", "hot_pattern", "cold_pattern", "ac", "prime", "midbias"] as MethodKey[] },
+  { cat: "통계기반", keys: ["hot", "cold", "pairs", "carryover", "norepeat", "overdue", "recent20", "recent10", "tail_diversity", "overdue_pick"] as MethodKey[] },
+  { cat: "패턴기반", keys: ["pattern", "hot_pattern", "cold_pattern", "ac", "prime", "midbias", "golden_zone"] as MethodKey[] },
   { cat: "균형기반", keys: ["random", "balance", "section", "ending", "spread"] as MethodKey[] },
 ];
 
@@ -540,8 +618,11 @@ function runGenerator(key: MethodKey, draws: DrawRow[], bayesStats?: BayesStat[]
     case "overdue":      return genOverdue(draws);
     case "recent20":     return genRecent20(draws);
     case "spread":       return genSpread(usedNumbers ?? new Set());
-    case "recent10":     return genRecent10(draws);
-    case "midbias":      return genMidBias(draws);
+    case "recent10":      return genRecent10(draws);
+    case "midbias":       return genMidBias(draws);
+    case "tail_diversity": return genTailDiversity(draws);
+    case "golden_zone":   return genGoldenZone();
+    case "overdue_pick":  return genOverduePick(draws);
   }
 }
 

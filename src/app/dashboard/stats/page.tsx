@@ -228,6 +228,7 @@ export default function StatsPage() {
   const [loading, setLoading] = useState(true);
   const [sortMode, setSortMode] = useState<"rank" | "number">("rank");
   const [patternTab, setPatternTab] = useState<"sum" | "odd" | "sec" | "con" | "end">("sum");
+  const [heatmapMode, setHeatmapMode] = useState<"50" | "100" | "200">("50");
 
   useEffect(() => {
     Promise.all([
@@ -362,6 +363,37 @@ export default function StatsPage() {
       end: { labels: endLabels, counts: endCounts },
     };
   }, [draws]);
+
+  /* ─── 끝자리 편향 데이터 ─── */
+  const tailBiasData = useMemo(() => {
+    if (draws.length === 0) return null;
+    const counts = new Array(10).fill(0);
+    draws.forEach(d => {
+      [d.n1, d.n2, d.n3, d.n4, d.n5, d.n6].forEach(n => counts[n % 10]++);
+    });
+    const total = draws.length * 6;
+    const expected = total / 10;
+    return Array.from({ length: 10 }, (_, i) => ({
+      tail: i,
+      count: counts[i],
+      pct: (counts[i] / total * 100),
+      bias: ((counts[i] - expected) / expected * 100),
+    }));
+  }, [draws]);
+
+  /* ─── 히트맵 데이터 ─── */
+  const heatmapData = useMemo(() => {
+    if (draws.length === 0) return null;
+    const n = heatmapMode === "50" ? 50 : heatmapMode === "100" ? 100 : 200;
+    const recent = draws.slice(-Math.min(n, draws.length));
+    const counts = new Array(46).fill(0);
+    recent.forEach(d => {
+      [d.n1, d.n2, d.n3, d.n4, d.n5, d.n6].forEach(num => counts[num]++);
+    });
+    const max = Math.max(...counts.slice(1));
+    const min = Math.min(...counts.slice(1));
+    return { counts, max, min, total: recent.length };
+  }, [draws, heatmapMode]);
 
   if (loading) {
     return (
@@ -860,6 +892,153 @@ export default function StatsPage() {
             </div>
           </div>
         </>
+      )}
+
+      {/* ── 최근 N회 번호 히트맵 ── */}
+      {heatmapData && (
+        <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 mb-5">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-xs font-bold text-gray-700 flex items-center gap-1.5">
+              <span>🔥</span> 최근 회차 번호 히트맵
+              <span className="bg-orange-100 text-orange-600 text-[9px] font-extrabold px-1.5 py-0.5 rounded-full ml-1">NEW</span>
+            </h3>
+            <div className="flex gap-1">
+              {(["50","100","200"] as const).map(m => (
+                <button
+                  key={m}
+                  onClick={() => setHeatmapMode(m)}
+                  className={`text-[10px] px-2 py-1 rounded-lg font-bold transition ${
+                    heatmapMode === m ? "bg-orange-500 text-white" : "bg-gray-100 text-gray-500 hover:bg-gray-200"
+                  }`}
+                >{m}회</button>
+              ))}
+            </div>
+          </div>
+          <p className="text-[10px] text-gray-400 mb-3">최근 {heatmapMode}회차에서 각 번호의 출현 빈도 · 진할수록 자주 출현</p>
+          <div className="grid grid-cols-9 gap-1">
+            {Array.from({ length: 45 }, (_, i) => i + 1).map(n => {
+              const c = heatmapData.counts[n];
+              const intensity = heatmapData.max > 0 ? c / heatmapData.max : 0;
+              const isHot = intensity >= 0.75;
+              const isWarm = intensity >= 0.5;
+              const isCold = intensity <= 0.2;
+              const bg = isHot ? "bg-orange-500 text-white" : isWarm ? "bg-orange-200 text-orange-800" : isCold ? "bg-blue-100 text-blue-600" : "bg-gray-100 text-gray-500";
+              return (
+                <div key={n} className={`${bg} rounded-lg text-center py-1.5 transition`} title={`${n}번: ${c}회`}>
+                  <div className="text-[10px] font-bold">{n}</div>
+                  <div className="text-[9px] opacity-80">{c}</div>
+                </div>
+              );
+            })}
+          </div>
+          <div className="flex items-center gap-3 mt-3 justify-center text-[10px] text-gray-400">
+            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-orange-500 inline-block"></span>많이 출현</span>
+            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-gray-100 inline-block border"></span>보통</span>
+            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-blue-100 inline-block"></span>적게 출현</span>
+          </div>
+        </div>
+      )}
+
+      {/* ── 끝자리 편향 차트 ── */}
+      {tailBiasData && (
+        <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 mb-5">
+          <h3 className="text-xs font-bold text-gray-700 mb-1 flex items-center gap-1.5">
+            <span>🔢</span> 끝자리(일의 자리) 출현 편향
+            <span className="bg-violet-100 text-violet-600 text-[9px] font-extrabold px-1.5 py-0.5 rounded-full ml-1">NEW</span>
+          </h3>
+          <p className="text-[10px] text-gray-400 mb-3">1~1248회 전체 기준 · 기대값 대비 편차 (균등 시 0%)</p>
+          <div className="space-y-1.5">
+            {tailBiasData.map(({ tail, pct, bias }) => {
+              const isPos = bias > 0;
+              const absBias = Math.abs(bias);
+              const barW = Math.min(absBias * 4, 100);
+              return (
+                <div key={tail} className="flex items-center gap-2">
+                  <div className="w-8 shrink-0 text-center">
+                    <span className="text-[11px] font-extrabold text-gray-600">끝{tail}</span>
+                  </div>
+                  <div className="flex-1 relative h-5 bg-gray-100 rounded-full overflow-hidden">
+                    <div
+                      className={`absolute top-0 h-full rounded-full transition-all duration-700 ${
+                        isPos ? "bg-gradient-to-r from-rose-400 to-rose-500" : "bg-gradient-to-r from-sky-400 to-sky-500"
+                      }`}
+                      style={{ width: `${Math.max(barW, 1)}%` }}
+                    />
+                  </div>
+                  <div className="text-right shrink-0 w-28">
+                    <span className="text-[11px] font-bold text-gray-600">{pct.toFixed(1)}%</span>
+                    <span className={`text-[10px] ml-1 font-semibold ${isPos ? "text-rose-500" : "text-sky-500"}`}>
+                      ({isPos ? "+" : ""}{bias.toFixed(1)}%)
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <p className="text-[10px] text-gray-400 mt-3 bg-violet-50 rounded-lg px-3 py-2">
+            <span className="text-violet-600 font-bold">💡 전략 활용:</span> 끝자리 3·4 과다 출현 → 끝자리다양성 전략이 이를 보정하여 6가지 끝자리 분산 조합 생성
+          </p>
+        </div>
+      )}
+
+      {/* ── 합계 분포 황금구간 강조 그래프 ── */}
+      {patternStats && (
+        <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 mb-5">
+          <h3 className="text-xs font-bold text-gray-700 mb-1 flex items-center gap-1.5">
+            <span>🥇</span> 합계 분포 × 황금구간 분석
+            <span className="bg-amber-100 text-amber-700 text-[9px] font-extrabold px-1.5 py-0.5 rounded-full ml-1">NEW</span>
+          </h3>
+          <p className="text-[10px] text-gray-400 mb-3">역대 {patternStats.total}회 당첨번호 합계 분포 · 황금구간 120~155 강조</p>
+          <div className="space-y-1">
+            {patternStats.sum.labels.map((label, i) => {
+              const count = patternStats.sum.counts[i];
+              const pct = (count / patternStats.total * 100);
+              const isGolden = label === "120-129" || label === "130-139" || label === "140-149" || label === "150-159";
+              const isPass = patternStats.sum.highlight[i];
+              const maxCount = Math.max(...patternStats.sum.counts);
+              const barW = maxCount > 0 ? (count / maxCount * 100) : 0;
+              return (
+                <div key={label} className={`flex items-center gap-2 rounded-xl px-2 py-1 ${isGolden ? "bg-amber-50" : ""}`}>
+                  <div className="w-16 shrink-0">
+                    <span className={`text-[10px] font-semibold ${isGolden ? "text-amber-700" : isPass ? "text-emerald-600" : "text-gray-400"}`}>
+                      {label}
+                    </span>
+                  </div>
+                  <div className="flex-1 h-4 bg-gray-100 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all duration-700 ${
+                        isGolden ? "bg-gradient-to-r from-amber-400 to-yellow-500" : isPass ? "bg-gradient-to-r from-emerald-400 to-teal-400" : "bg-gray-300"
+                      }`}
+                      style={{ width: `${Math.max(barW, 0.5)}%` }}
+                    />
+                  </div>
+                  <div className="text-right shrink-0 w-20">
+                    <span className={`text-[11px] font-bold ${isGolden ? "text-amber-700" : isPass ? "text-emerald-600" : "text-gray-400"}`}>
+                      {pct.toFixed(1)}%
+                    </span>
+                    {isGolden && <span className="text-[9px] ml-1 text-amber-500">🥇</span>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <div className="mt-3 grid grid-cols-2 gap-2 text-[10px]">
+            <div className="bg-amber-50 border border-amber-100 rounded-xl p-2.5">
+              <p className="text-amber-700 font-bold mb-0.5">🥇 황금구간 (120~155)</p>
+              <p className="text-amber-600 font-extrabold text-base">
+                {(((patternStats.sum.counts[4] ?? 0) + (patternStats.sum.counts[5] ?? 0) + (patternStats.sum.counts[6] ?? 0)) / patternStats.total * 100).toFixed(1)}%
+              </p>
+              <p className="text-gray-400 mt-0.5">전체 당첨 중 이 범위</p>
+            </div>
+            <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-2.5">
+              <p className="text-emerald-700 font-bold mb-0.5">📊 필터 통과 (100~159)</p>
+              <p className="text-emerald-600 font-extrabold text-base">
+                {((patternStats.passSum / patternStats.total) * 100).toFixed(1)}%
+              </p>
+              <p className="text-gray-400 mt-0.5">패턴 필터 범위</p>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* ── 모델 설명 ── */}
