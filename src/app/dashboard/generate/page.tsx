@@ -884,12 +884,13 @@ function diagnosNumbers(nums: number[], draws: DrawRow[], bayesStats: BayesStat[
   const hotPass = hotCnt >= 2;
   criteria.push({ label: "핫번호 2개↑ (최근 100회 상위 15)", pass: hotPass, detail: `${hotCnt}개 포함`, points: 10 });
 
-  // 6. 연속번호 1쌍 이상 (10점)
-  let hasCons = false;
+  // 6. 연속번호 정확히 1쌍 (10점) — 0쌍/2쌍 이상 모두 탈락
+  let consPairs = 0;
   for (let i = 0; i < sorted.length - 1; i++) {
-    if (sorted[i + 1] - sorted[i] === 1) { hasCons = true; break; }
+    if (sorted[i + 1] - sorted[i] === 1) consPairs++;
   }
-  criteria.push({ label: "연속번호 1쌍 이상", pass: hasCons, detail: hasCons ? "있음" : "없음", points: 10 });
+  const consPass = consPairs === 1;
+  criteria.push({ label: "연속번호 정확히 1쌍", pass: consPass, detail: `${consPairs}쌍`, points: 10 });
 
   // 7. 끝자리 5종 이상 (10점) — 더 엄격
   const tails = new Set(sorted.map(n => n % 10));
