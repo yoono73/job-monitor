@@ -214,7 +214,13 @@ function passFilter(nums: number[]): boolean {
   const secs = new Set(sorted.map(n => n <= 10 ? 1 : n <= 20 ? 2 : n <= 30 ? 3 : n <= 40 ? 4 : 5)).size;
   let cons = 0;
   for (let i = 0; i < sorted.length - 1; i++) if (sorted[i + 1] - sorted[i] === 1) cons++;
-  return sum >= 100 && sum <= 159 && (odd === 3 || odd === 4) && secs >= 3 && cons >= 1;
+  const endUniq = new Set(nums.map(n => n % 10)).size;
+  const diffs = new Set<number>();
+  for (let i = 0; i < sorted.length; i++)
+    for (let j = i + 1; j < sorted.length; j++)
+      diffs.add(sorted[j] - sorted[i]);
+  const ac = diffs.size - 5;
+  return sum >= 115 && sum <= 140 && odd === 3 && secs >= 3 && cons === 1 && endUniq >= 5 && ac >= 8;
 }
 
 /* ─── Page ─── */
@@ -337,7 +343,7 @@ export default function StatsPage() {
     });
 
     // 패턴 통과율 세부 분해
-    let passSum = 0, passOdd = 0, passSec = 0, passCon = 0;
+    let passSum = 0, passOdd = 0, passSec = 0, passCon = 0, passEnd = 0, passAC = 0;
     draws.forEach(d => {
       const nums = [d.n1, d.n2, d.n3, d.n4, d.n5, d.n6];
       const sum  = nums.reduce((a, b) => a + b, 0);
@@ -346,16 +352,25 @@ export default function StatsPage() {
       const secs = new Set(sorted.map(n => n <= 10 ? 1 : n <= 20 ? 2 : n <= 30 ? 3 : n <= 40 ? 4 : 5)).size;
       let cons = 0;
       for (let i = 0; i < sorted.length - 1; i++) if (sorted[i + 1] - sorted[i] === 1) cons++;
+      const endUniq = new Set(nums.map(n => n % 10)).size;
+      // AC값: 고유 차이 수 - 5
+      const diffs = new Set<number>();
+      for (let i = 0; i < sorted.length; i++)
+        for (let j = i + 1; j < sorted.length; j++)
+          diffs.add(sorted[j] - sorted[i]);
+      const ac = diffs.size - 5;
       if (sum >= 115 && sum <= 140) passSum++;
       if (odd === 3) passOdd++;
       if (secs >= 3) passSec++;
       if (cons === 1) passCon++;
+      if (endUniq >= 5) passEnd++;
+      if (ac >= 8) passAC++;
     });
 
     return {
       total,
       passCount,
-      passSum, passOdd, passSec, passCon,
+      passSum, passOdd, passSec, passCon, passEnd, passAC,
       sum: { labels: sumLabels, counts: sumCounts, highlight: sumHighlight },
       odd: { labels: oddLabels, counts: oddCounts, highlight: oddHighlight },
       sec: { labels: secLabels, counts: secCounts, highlight: secHighlight },
@@ -759,7 +774,7 @@ export default function StatsPage() {
               <p className="text-white/70 text-xs mt-1">
                 <span className="text-teal-200 font-semibold">전체 {patternStats.total}회 분석 · {(latestDraw ?? draws[draws.length - 1])?.draw_no}회차까지 반영</span>
                 <span className="text-white/40 mx-1.5">·</span>
-                <span className="text-teal-200 font-semibold">합계 · 홀짝 · 구간 · 연속번호</span>
+                <span className="text-teal-200 font-semibold">합계 · 홀짝 · 구간 · 연속번호 · 끝자리 · AC값</span>
               </p>
               <p className="text-white/50 text-[11px] mt-1.5">
                 실제 1등 당첨번호 기반 조합 특성 통계
@@ -774,7 +789,7 @@ export default function StatsPage() {
             </h3>
             {/* 전체 통과율 - 크게 */}
             <div className="bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 rounded-xl p-4 mb-4 text-center">
-              <p className="text-xs text-emerald-600 font-semibold mb-1">4조건 동시 통과</p>
+              <p className="text-xs text-emerald-600 font-semibold mb-1">6조건 동시 통과</p>
               <p className="text-4xl font-extrabold text-emerald-600 tracking-tight">
                 {((patternStats.passCount / patternStats.total) * 100).toFixed(1)}%
               </p>
@@ -789,10 +804,12 @@ export default function StatsPage() {
                 { label: "홀수 정확히 3개", count: patternStats.passOdd, icon: "⚖️", color: "violet" },
                 { label: "구간 3개+", count: patternStats.passSec, icon: "📍", color: "amber" },
                 { label: "연속 정확히 1쌍", count: patternStats.passCon, icon: "🔗", color: "sky" },
+                { label: "끝자리 5종↑", count: patternStats.passEnd, icon: "🔢", color: "rose" },
+                { label: "AC값 ≥8", count: patternStats.passAC, icon: "📐", color: "indigo" },
               ].map(({ label, count, icon, color }) => {
                 const pct = ((count / patternStats.total) * 100).toFixed(1);
-                const textCls = color === "emerald" ? "text-emerald-600" : color === "violet" ? "text-violet-600" : color === "amber" ? "text-amber-600" : "text-sky-600";
-                const bgCls = color === "emerald" ? "bg-emerald-50 border-emerald-200" : color === "violet" ? "bg-violet-50 border-violet-200" : color === "amber" ? "bg-amber-50 border-amber-200" : "bg-sky-50 border-sky-200";
+                const textCls = color === "emerald" ? "text-emerald-600" : color === "violet" ? "text-violet-600" : color === "amber" ? "text-amber-600" : color === "sky" ? "text-sky-600" : color === "rose" ? "text-rose-600" : "text-indigo-600";
+                const bgCls = color === "emerald" ? "bg-emerald-50 border-emerald-200" : color === "violet" ? "bg-violet-50 border-violet-200" : color === "amber" ? "bg-amber-50 border-amber-200" : color === "sky" ? "bg-sky-50 border-sky-200" : color === "rose" ? "bg-rose-50 border-rose-200" : "bg-indigo-50 border-indigo-200";
                 return (
                   <div key={label} className={`${bgCls} border rounded-xl p-3 text-center`}>
                     <p className="text-base mb-0.5">{icon}</p>
