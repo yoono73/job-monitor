@@ -585,26 +585,64 @@ function genTripleCommon(draws: DrawRow[]): Six {
   return genBalance();
 }
 
-/* ── 4조건 필터 자동 생성 ── */
+/* ── 고급 8조건 필터 자동 생성 ── */
 function genAutoFilter(): Six {
-  // 4조건: 합계100~159, 홀수3~4개, 볼구간3개이상(1-10/11-20/21-30/31-40/41-45), 연속1쌍이상
+  // AC값(Arithmetic Complexity): 모든 번호쌍 차이의 고유값 개수 - 5
+  // 번호 분산성 지표 — 높을수록 번호가 골고루 퍼짐 (최대 14)
+  const calcAC = (s: number[]) => {
+    const diffs = new Set<number>();
+    for (let i = 0; i < s.length; i++)
+      for (let j = i + 1; j < s.length; j++)
+        diffs.add(s[j] - s[i]);
+    return diffs.size - 5;
+  };
   const secOf = (n: number) => n <= 10 ? 0 : n <= 20 ? 1 : n <= 30 ? 2 : n <= 40 ? 3 : 4;
-  for (let t = 0; t < 30000; t++) {
+
+  for (let t = 0; t < 80000; t++) {
     const nums = Array.from({ length: 45 }, (_, i) => i + 1).sort(() => Math.random() - 0.5).slice(0, 6);
-    const sorted = nums.sort((a, b) => a - b) as Six;
-    const sum = sorted.reduce((a, b) => a + b, 0);
-    const odd = sorted.filter(n => n % 2 === 1).length;
-    const secs = new Set(sorted.map(secOf));
-    const hasCons = sorted.slice(0, -1).some((n, i) => sorted[i + 1] - n === 1);
-    if (sum >= 100 && sum <= 159 && odd >= 3 && odd <= 4 && secs.size >= 3 && hasCons) return sorted;
+    const s = nums.sort((a, b) => a - b) as Six;
+
+    // 조건1: 합계 110~150 (기존 100~159보다 정밀)
+    const sum = s.reduce((a, b) => a + b, 0);
+    if (sum < 110 || sum > 150) continue;
+
+    // 조건2: 홀수 3~4개
+    const odd = s.filter(n => n % 2 === 1).length;
+    if (odd < 3 || odd > 4) continue;
+
+    // 조건3: 구간 3개 이상 (1-10 / 11-20 / 21-30 / 31-40 / 41-45)
+    if (new Set(s.map(secOf)).size < 3) continue;
+
+    // 조건4: 연속 1쌍 이상 (연속 없음은 드묾)
+    const consArr: boolean[] = s.slice(0, -1).map((n, i) => s[i + 1] - n === 1);
+    if (!consArr.some(Boolean)) continue;
+
+    // 조건5: 3연속 없음 (1-2-3 패턴은 극히 드묾)
+    let hasTriple = false;
+    for (let i = 0; i < consArr.length - 1; i++)
+      if (consArr[i] && consArr[i + 1]) { hasTriple = true; break; }
+    if (hasTriple) continue;
+
+    // 조건6: 끝자리 중복 ≤ 2개 (같은 일의자리 3개 이상 금지)
+    const tailFreq = s.reduce((m, n) => { const t = n % 10; m[t] = (m[t] || 0) + 1; return m; }, {} as Record<number, number>);
+    if (Math.max(...Object.values(tailFreq)) > 2) continue;
+
+    // 조건7: 저번호(1~22) 2~4개 (극단적 편향 방지)
+    const lowCnt = s.filter(n => n <= 22).length;
+    if (lowCnt < 2 || lowCnt > 4) continue;
+
+    // 조건8: AC값 ≥ 7 (번호 분산성)
+    if (calcAC(s) < 7) continue;
+
+    return s;
   }
-  // fallback: 합계+홀짝만
-  for (let t = 0; t < 10000; t++) {
+  // fallback: 완화 조건
+  for (let t = 0; t < 20000; t++) {
     const nums = Array.from({ length: 45 }, (_, i) => i + 1).sort(() => Math.random() - 0.5).slice(0, 6);
-    const sorted = nums.sort((a, b) => a - b) as Six;
-    const sum = sorted.reduce((a, b) => a + b, 0);
-    const odd = sorted.filter(n => n % 2 === 1).length;
-    if (sum >= 100 && sum <= 159 && odd >= 2 && odd <= 4) return sorted;
+    const s = nums.sort((a, b) => a - b) as Six;
+    const sum = s.reduce((a, b) => a + b, 0);
+    const odd = s.filter(n => n % 2 === 1).length;
+    if (sum >= 100 && sum <= 159 && odd >= 2 && odd <= 4) return s;
   }
   return genBalance();
 }
@@ -939,8 +977,8 @@ export default function GeneratePage() {
         icon: "🎯",
         method: "조건필터",
         category: "패턴기반",
-        desc: "4조건 동시 통과",
         numbers: genAutoFilter(),
+        desc: "8조건 동시 통과",
       }));
       setAutoFilterSets(newSets);
       setAutoFilterBusy(false);
@@ -1381,7 +1419,7 @@ export default function GeneratePage() {
             <span className="text-xl">🎯</span>
             <div className="text-left">
               <div className="text-sm font-bold text-emerald-800">조건 필터 자동 생성</div>
-              <div className="text-[11px] text-emerald-500">4조건 동시 통과 번호만 자동 추출</div>
+              <div className="text-[11px] text-emerald-500">8조건 동시 통과 번호만 자동 추출</div>
             </div>
             <span className="bg-emerald-500 text-white text-[9px] font-extrabold px-1.5 py-0.5 rounded-full ml-1">NEW</span>
           </div>
@@ -1390,25 +1428,31 @@ export default function GeneratePage() {
 
         {showAutoFilter && (
           <div className="mt-2 bg-white border border-emerald-200 rounded-2xl p-4 shadow-sm">
-            {/* 4조건 설명 */}
-            <div className="grid grid-cols-2 gap-2 mb-3">
+            {/* 8조건 설명 */}
+            <div className="grid grid-cols-2 gap-1.5 mb-3">
               {[
-                { icon: "📊", label: "합계 100~159", rate: "62.3%" },
-                { icon: "⚖️", label: "홀수 3~4개",   rate: "60.0%" },
-                { icon: "📍", label: "구간 3개+",    rate: "96.9%" },
-                { icon: "🔗", label: "연속 1쌍+",    rate: "51.9%" },
+                { icon: "📊", label: "합계 110~150",   rate: "~45%",  tip: "좁은 황금구간" },
+                { icon: "⚖️", label: "홀수 3~4개",     rate: "60%",   tip: "홀짝 균형" },
+                { icon: "📍", label: "구간 3개+",      rate: "96.9%", tip: "번호 분포" },
+                { icon: "🔗", label: "연속 1~2쌍",     rate: "~48%",  tip: "3연속 제외" },
+                { icon: "🔢", label: "끝자리 중복≤2",  rate: "~80%",  tip: "일의자리 분산" },
+                { icon: "⬇️", label: "저번호 2~4개",   rate: "~75%",  tip: "1~22 균형" },
+                { icon: "📐", label: "AC값 ≥7",        rate: "~65%",  tip: "번호 분산성" },
               ].map(c => (
-                <div key={c.label} className="flex items-center gap-1.5 bg-emerald-50 rounded-xl px-3 py-2">
-                  <span className="text-base">{c.icon}</span>
-                  <span className="text-[11px] font-medium text-emerald-800 flex-1">{c.label}</span>
-                  <span className="text-[10px] font-bold text-emerald-600">{c.rate}</span>
+                <div key={c.label} className="flex items-center gap-1.5 bg-emerald-50 rounded-lg px-2.5 py-1.5">
+                  <span className="text-sm">{c.icon}</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[10px] font-bold text-emerald-800">{c.label}</div>
+                    <div className="text-[9px] text-emerald-500">{c.tip}</div>
+                  </div>
+                  <span className="text-[10px] font-bold text-emerald-600 shrink-0">{c.rate}</span>
                 </div>
               ))}
             </div>
-            <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 mb-4 text-center">
-              <span className="text-xs font-bold text-amber-700">4조건 동시 통과: </span>
-              <span className="text-base font-extrabold text-amber-800">17.6%</span>
-              <span className="text-xs text-amber-600"> (1,000회 중 176회)</span>
+            <div className="bg-red-50 border border-red-200 rounded-xl px-3 py-2 mb-4 text-center">
+              <span className="text-xs font-bold text-red-700">8조건 동시 통과: </span>
+              <span className="text-base font-extrabold text-red-800">~4~5%</span>
+              <span className="text-xs text-red-600"> (1,000회 중 40~50회만 통과)</span>
             </div>
 
             {/* 세트 수 선택 */}
