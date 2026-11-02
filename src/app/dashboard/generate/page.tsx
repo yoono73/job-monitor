@@ -829,20 +829,29 @@ function diagnosNumbers(nums: number[], draws: DrawRow[], bayesStats: BayesStat[
   const sorted = [...nums].sort((a, b) => a - b);
   const criteria: DiagCriterion[] = [];
 
-  // 1. 합계 황금구간 100~159 (15점)
+  // AC값 계산 헬퍼
+  const calcDiagAC = (s: number[]) => {
+    const diffs = new Set<number>();
+    for (let i = 0; i < s.length; i++)
+      for (let j = i + 1; j < s.length; j++)
+        diffs.add(s[j] - s[i]);
+    return diffs.size - 5;
+  };
+
+  // 1. 합계 황금구간 115~140 (15점) — 더 엄격한 핵심 구간
   const sum = sorted.reduce((s, n) => s + n, 0);
-  const sumPass = sum >= 100 && sum <= 159;
-  criteria.push({ label: "합계 황금구간 (100~159)", pass: sumPass, detail: `합계 ${sum}`, points: 15 });
+  const sumPass = sum >= 115 && sum <= 140;
+  criteria.push({ label: "합계 핵심구간 (115~140)", pass: sumPass, detail: `합계 ${sum}`, points: 15 });
 
-  // 2. 홀짝 비율 3:3 또는 4:2 or 2:4 (15점)
+  // 2. 홀수 정확히 3개 (15점) — 완벽한 3:3 균형
   const oddCnt = sorted.filter(n => n % 2 === 1).length;
-  const oePass = oddCnt >= 2 && oddCnt <= 4;
-  criteria.push({ label: "홀짝 균형 (홀2~4개)", pass: oePass, detail: `홀수 ${oddCnt}개`, points: 15 });
+  const oePass = oddCnt === 3;
+  criteria.push({ label: "홀짝 완벽 균형 (홀수 3개)", pass: oePass, detail: `홀수 ${oddCnt}개`, points: 15 });
 
-  // 3. 구간 커버 3구간 이상 (15점) - 구간: 1-15, 16-30, 31-45
+  // 3. 3구간 완전 커버 (15점) - 구간: 1-15, 16-30, 31-45
   const secs = new Set(sorted.map(n => n <= 15 ? 1 : n <= 30 ? 2 : 3));
-  const secPass = secs.size >= 2;
-  criteria.push({ label: "구간 커버 (3구간 중 2구간↑)", pass: secPass, detail: `${secs.size}구간`, points: 15 });
+  const secPass = secs.size === 3;
+  criteria.push({ label: "3구간 완전 커버 (1~15·16~30·31~45)", pass: secPass, detail: `${secs.size}구간`, points: 15 });
 
   // 4. 베이지안 상위 (평균 순위 < 23) (15점)
   let bayesScore = 0;
@@ -850,8 +859,8 @@ function diagnosNumbers(nums: number[], draws: DrawRow[], bayesStats: BayesStat[
     const ranks = sorted.map(n => { const s = bayesStats.find(b => b.number === n); return s ? s.bayesian_rank : 45; });
     const avgRank = ranks.reduce((s, r) => s + r, 0) / ranks.length;
     bayesScore = avgRank;
-    const bayesPass = avgRank < 23;
-    criteria.push({ label: "베이지안 상위 (평균 순위 23위↑)", pass: bayesPass, detail: `평균 ${avgRank.toFixed(1)}위`, points: 15 });
+    const bayesPass = avgRank < 18;
+    criteria.push({ label: "베이지안 상위 (평균 순위 18위↑)", pass: bayesPass, detail: `평균 ${avgRank.toFixed(1)}위`, points: 15 });
   } else {
     criteria.push({ label: "베이지안 상위", pass: false, detail: "데이터 로딩 중", points: 15 });
   }
@@ -864,8 +873,9 @@ function diagnosNumbers(nums: number[], draws: DrawRow[], bayesStats: BayesStat[
     for (const d of recent) getNums(d).forEach(n => { freq[n] = (freq[n] ?? 0) + 1; });
     hotNums = Object.entries(freq).sort(([, a], [, b]) => b - a).slice(0, 15).map(([n]) => +n);
   }
-  const hotPass = sorted.some(n => hotNums.includes(n));
-  criteria.push({ label: "핫번호 포함 (최근 100회 상위 15)", pass: hotPass, detail: hotPass ? "포함됨" : "없음", points: 10 });
+  const hotCnt = sorted.filter(n => hotNums.includes(n)).length;
+  const hotPass = hotCnt >= 2;
+  criteria.push({ label: "핫번호 2개↑ (최근 100회 상위 15)", pass: hotPass, detail: `${hotCnt}개 포함`, points: 10 });
 
   // 6. 연속번호 1쌍 이상 (10점)
   let hasCons = false;
@@ -874,21 +884,15 @@ function diagnosNumbers(nums: number[], draws: DrawRow[], bayesStats: BayesStat[
   }
   criteria.push({ label: "연속번호 1쌍 이상", pass: hasCons, detail: hasCons ? "있음" : "없음", points: 10 });
 
-  // 7. 끝자리 4종 이상 (10점)
+  // 7. 끝자리 5종 이상 (10점) — 더 엄격
   const tails = new Set(sorted.map(n => n % 10));
-  const tailPass = tails.size >= 4;
-  criteria.push({ label: "끝자리 다양성 (4종 이상)", pass: tailPass, detail: `${tails.size}종`, points: 10 });
+  const tailPass = tails.size >= 5;
+  criteria.push({ label: "끝자리 다양성 (5종 이상)", pass: tailPass, detail: `${tails.size}종`, points: 10 });
 
-  // 8. 3구간 공통 (통계 기반) — 최근 30회 3회 이상 등장한 번호 중 1개 이상 (10점)
-  let tripleNums: number[] = [];
-  if (draws.length >= 30) {
-    const r30 = draws.slice(0, 30);
-    const freq: Record<number, number> = {};
-    for (const d of r30) getNums(d).forEach(n => { freq[n] = (freq[n] ?? 0) + 1; });
-    tripleNums = Object.entries(freq).filter(([, v]) => v >= 3).map(([n]) => +n);
-  }
-  const triplePass = tripleNums.length > 0 && sorted.some(n => tripleNums.includes(n));
-  criteria.push({ label: "최근30회 고빈도 번호 포함", pass: triplePass, detail: triplePass ? "포함됨" : "없음", points: 10 });
+  // 8. AC값 8 이상 (10점) — 번호 분산성 고급 기준
+  const acVal = calcDiagAC(sorted);
+  const acPass = acVal >= 8;
+  criteria.push({ label: "AC값 ≥8 (번호 분산성 우수)", pass: acPass, detail: `AC=${acVal}`, points: 10 });
 
   const score = criteria.reduce((s, c) => c.pass ? s + c.points : s, 0);
 
@@ -1537,9 +1541,8 @@ export default function GeneratePage() {
                         </button>
                         <button
                           onClick={() => {
-                            setSets([{ idx: 1, icon: "🎯", method: "조건필터", category: "패턴기반", desc: "4조건 동시 통과", numbers: s.numbers }]);
+                            setSets([{ idx: 1, icon: "🎯", method: "조건필터", category: "패턴기반", desc: "8조건 통과", numbers: s.numbers }]);
                             setSavedSets(new Set());
-                            setShowAutoFilter(false);
                             window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
                           }}
                           className="flex-1 py-1.5 text-xs font-semibold rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition"
@@ -1571,9 +1574,8 @@ export default function GeneratePage() {
                             {dr.score >= 50 && (
                               <button
                                 onClick={() => {
-                                  setSets([{ idx: 1, icon: "🎯", method: "조건필터", category: "패턴기반", desc: `진단 ${dr.score}점`, numbers: s.numbers }]);
+                                  setSets([{ idx: 1, icon: "🎯", method: "조건필터", category: "패턴기반", desc: `8조건+진단 ${dr.score}점`, numbers: s.numbers }]);
                                   setSavedSets(new Set());
-                                  setShowAutoFilter(false);
                                   window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
                                 }}
                                 className="mt-2 w-full py-1.5 text-xs font-semibold rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition"
