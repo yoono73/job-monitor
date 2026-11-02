@@ -29,6 +29,13 @@ interface BayesStat {
   bayesian_rank: number;
 }
 
+interface PairStat {
+  num_a: number;
+  num_b: number;
+  co_count: number;
+  posterior_mean: number;
+}
+
 /* ─── 번호 진단 타입 ─── */
 interface DiagCriterion {
   label: string;
@@ -825,7 +832,7 @@ const MOM_CONFIGS = [
 ];
 
 /* ─── 번호 진단 로직 ─── */
-function diagnosNumbers(nums: number[], draws: DrawRow[], bayesStats: BayesStat[]): DiagResult {
+function diagnosNumbers(nums: number[], draws: DrawRow[], bayesStats: BayesStat[], pairStats: PairStat[]): DiagResult {
   const sorted = [...nums].sort((a, b) => a - b);
   const criteria: DiagCriterion[] = [];
 
@@ -894,6 +901,21 @@ function diagnosNumbers(nums: number[], draws: DrawRow[], bayesStats: BayesStat[
   const acPass = acVal >= 8;
   criteria.push({ label: "AC값 ≥8 (번호 분산성 우수)", pass: acPass, detail: `AC=${acVal}`, points: 10 });
 
+  // 9. 상위 페어 3개↑ (10점) — 베이지안 상위 100쌍 중 3개 이상 포함
+  if (pairStats.length > 0) {
+    const myPairs: string[] = [];
+    for (let i = 0; i < sorted.length; i++)
+      for (let j = i + 1; j < sorted.length; j++)
+        myPairs.push(`${sorted[i]}-${sorted[j]}`);
+    const topPairKeys = new Set(pairStats.map(p =>
+      `${Math.min(p.num_a, p.num_b)}-${Math.max(p.num_a, p.num_b)}`));
+    const pairHits = myPairs.filter(k => topPairKeys.has(k)).length;
+    const pairPass = pairHits >= 3;
+    criteria.push({ label: "상위 페어 3개↑ (궁합 좋은 쌍)", pass: pairPass, detail: `${pairHits}/15쌍 매칭`, points: 10 });
+  } else {
+    criteria.push({ label: "상위 페어 3개↑ (궁합 좋은 쌍)", pass: false, detail: "데이터 로딩 중", points: 10 });
+  }
+
   const score = criteria.reduce((s, c) => c.pass ? s + c.points : s, 0);
 
   // AI 교체 제안 (점수 < 55점이면)
@@ -929,6 +951,7 @@ export default function GeneratePage() {
   const [myPickNums,  setMyPickNums] = useState<Set<number>>(new Set());
   const [showMyPickPanel, setShowMyPickPanel] = useState(false);
   const [bayesStats,  setBayesStats] = useState<BayesStat[]>([]);
+  const [pairStats,   setPairStats]  = useState<PairStat[]>([]);
 
   // 번호 진단
   const [showDiagnosis, setShowDiagnosis] = useState(false);
@@ -954,7 +977,7 @@ export default function GeneratePage() {
 
   const runDiagnosis = () => {
     if (diagNums.size !== 6) return;
-    const result = diagnosNumbers(Array.from(diagNums), draws, bayesStats);
+    const result = diagnosNumbers(Array.from(diagNums), draws, bayesStats, pairStats);
     setDiagResult(result);
   };
 
@@ -967,7 +990,7 @@ export default function GeneratePage() {
     // 조건 통과 번호로 자동 교체 후 재진단
     const nums = genAutoFilter();
     setDiagNums(new Set(nums));
-    const result = diagnosNumbers(Array.from(nums), draws, bayesStats);
+    const result = diagnosNumbers(Array.from(nums), draws, bayesStats, pairStats);
     setDiagResult(result);
   };
 
@@ -1015,6 +1038,12 @@ export default function GeneratePage() {
       .select("number,posterior_mean,bayesian_rank")
       .order("bayesian_rank")
       .then(({ data }) => { if (data) setBayesStats(data as BayesStat[]); });
+
+    supabase.from("lotto_pair_stats")
+      .select("num_a,num_b,co_count,posterior_mean")
+      .order("posterior_mean", { ascending: false })
+      .limit(100)
+      .then(({ data }) => { if (data) setPairStats(data as PairStat[]); });
 
     // 생년월일 로컬 스토리지 로드
     try {
@@ -1528,7 +1557,7 @@ export default function GeneratePage() {
                                 return next;
                               });
                             } else {
-                              const result = diagnosNumbers(s.numbers, draws, bayesStats);
+                              const result = diagnosNumbers(s.numbers, draws, bayesStats, pairStats);
                               setAutoFilterDiagMap(prev => ({ ...prev, [s.idx]: result }));
                             }
                           }}
