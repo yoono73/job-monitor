@@ -290,12 +290,12 @@ export default function StatsPage() {
     // 합계 분포 (10구간 히스토그램)
     const sumLabels = ["~89","90-99","100-109","110-119","120-129","130-139","140-149","150-159","160-169","170-179","180+"];
     const sumCounts = new Array(sumLabels.length).fill(0);
-    const sumHighlight = [false,false,true,true,true,true,true,true,false,false,false]; // 100~159
+    const sumHighlight = [false,false,false,true,true,true,false,false,false,false,false]; // 115~140
 
     // 홀짝 분포
     const oddLabels  = ["0홀6짝","1홀5짝","2홀4짝","3홀3짝","4홀2짝","5홀1짝","6홀0짝"];
     const oddCounts  = new Array(7).fill(0);
-    const oddHighlight = [false,false,false,true,true,false,false]; // odd===3||4
+    const oddHighlight = [false,false,false,true,false,false,false]; // odd===3 정확히
 
     // 구간 커버 분포 (몇 구간에서 나왔는지)
     const secLabels  = ["1구간","2구간","3구간","4구간","5구간"];
@@ -305,7 +305,7 @@ export default function StatsPage() {
     // 연속번호 쌍 수
     const conLabels  = ["0쌍","1쌍","2쌍","3쌍+"];
     const conCounts  = new Array(4).fill(0);
-    const conHighlight = [false,true,true,true]; // cons>=1
+    const conHighlight = [false,true,false,false]; // cons===1 정확히 1쌍
 
     // 끝자리 유니크 수
     const endLabels  = ["1개","2개","3개","4개","5개","6개"];
@@ -346,10 +346,10 @@ export default function StatsPage() {
       const secs = new Set(sorted.map(n => n <= 10 ? 1 : n <= 20 ? 2 : n <= 30 ? 3 : n <= 40 ? 4 : 5)).size;
       let cons = 0;
       for (let i = 0; i < sorted.length - 1; i++) if (sorted[i + 1] - sorted[i] === 1) cons++;
-      if (sum >= 100 && sum <= 159) passSum++;
-      if (odd === 3 || odd === 4) passOdd++;
+      if (sum >= 115 && sum <= 140) passSum++;
+      if (odd === 3) passOdd++;
       if (secs >= 3) passSec++;
-      if (cons >= 1) passCon++;
+      if (cons === 1) passCon++;
     });
 
     return {
@@ -654,13 +654,13 @@ export default function StatsPage() {
         const secs = new Set(sorted.map(n => n <= 10 ? 1 : n <= 20 ? 2 : n <= 30 ? 3 : n <= 40 ? 4 : 5)).size;
         let cons = 0;
         for (let i = 0; i < sorted.length - 1; i++) if (sorted[i + 1] - sorted[i] === 1) cons++;
-        const passed = sum >= 100 && sum <= 159 && (odd === 3 || odd === 4) && secs >= 3 && cons >= 1;
+        const passed = sum >= 115 && sum <= 140 && odd === 3 && secs >= 3 && cons === 1;
 
         const checks = [
-          { label: `합계 ${sum}`, pass: sum >= 100 && sum <= 159, cond: "100~159" },
-          { label: `홀수 ${odd}개`, pass: odd === 3 || odd === 4, cond: "3~4개" },
+          { label: `합계 ${sum}`, pass: sum >= 115 && sum <= 140, cond: "115~140" },
+          { label: `홀수 ${odd}개`, pass: odd === 3, cond: "정확히 3개" },
           { label: `${secs}구간`, pass: secs >= 3, cond: "3구간+" },
-          { label: `연속 ${cons}쌍`, pass: cons >= 1, cond: "1쌍+" },
+          { label: `연속 ${cons}쌍`, pass: cons === 1, cond: "정확히 1쌍" },
         ];
 
         return (
@@ -785,10 +785,10 @@ export default function StatsPage() {
             {/* 조건별 개별 통과율 */}
             <div className="grid grid-cols-2 gap-3">
               {[
-                { label: "합계 100~159", count: patternStats.passSum, icon: "📊", color: "emerald" },
-                { label: "홀수 3~4개", count: patternStats.passOdd, icon: "⚖️", color: "violet" },
+                { label: "합계 115~140", count: patternStats.passSum, icon: "📊", color: "emerald" },
+                { label: "홀수 정확히 3개", count: patternStats.passOdd, icon: "⚖️", color: "violet" },
                 { label: "구간 3개+", count: patternStats.passSec, icon: "📍", color: "amber" },
-                { label: "연속 1쌍+", count: patternStats.passCon, icon: "🔗", color: "sky" },
+                { label: "연속 정확히 1쌍", count: patternStats.passCon, icon: "🔗", color: "sky" },
               ].map(({ label, count, icon, color }) => {
                 const pct = ((count / patternStats.total) * 100).toFixed(1);
                 const textCls = color === "emerald" ? "text-emerald-600" : color === "violet" ? "text-violet-600" : color === "amber" ? "text-amber-600" : "text-sky-600";
@@ -845,7 +845,7 @@ export default function StatsPage() {
             )}
             {patternTab === "con" && (
               <p className="text-[11px] text-gray-400 mb-3 bg-sky-50 rounded-lg px-3 py-2">
-                <span className="text-sky-600 font-bold">★ 필터 기준:</span> 연속번호 1쌍 이상
+                <span className="text-sky-600 font-bold">★ 필터 기준:</span> 연속번호 정확히 1쌍
                 <span className="text-gray-300 mx-2">·</span> 연속번호(예: 5,6)가 1쌍 이상 포함된 회차가 다수
               </p>
             )}
