@@ -894,10 +894,11 @@ export default function GeneratePage() {
   const [diagResult,    setDiagResult]    = useState<DiagResult | null>(null);
 
   // 조건 필터 자동 생성
-  const [showAutoFilter,   setShowAutoFilter]   = useState(false);
-  const [autoFilterCount,  setAutoFilterCount]  = useState(3);
-  const [autoFilterSets,   setAutoFilterSets]   = useState<LottoSet[] | null>(null);
-  const [autoFilterBusy,   setAutoFilterBusy]   = useState(false);
+  const [showAutoFilter,      setShowAutoFilter]      = useState(false);
+  const [autoFilterCount,     setAutoFilterCount]     = useState(3);
+  const [autoFilterSets,      setAutoFilterSets]      = useState<LottoSet[] | null>(null);
+  const [autoFilterBusy,      setAutoFilterBusy]      = useState(false);
+  const [autoFilterDiagMap,   setAutoFilterDiagMap]   = useState<Record<number, DiagResult>>({});
 
   const toggleDiagNum = (n: number) => {
     setDiagNums(prev => {
@@ -931,6 +932,7 @@ export default function GeneratePage() {
   const runAutoFilter = () => {
     setAutoFilterBusy(true);
     setAutoFilterSets(null);
+    setAutoFilterDiagMap({});
     setTimeout(() => {
       const newSets: LottoSet[] = Array.from({ length: autoFilterCount }, (_, i) => ({
         idx: i + 1,
@@ -1470,15 +1472,24 @@ export default function GeneratePage() {
                         </button>
                         <button
                           onClick={() => {
-                            setDiagNums(new Set(s.numbers));
-                            setDiagResult(null);
-                            setShowDiagnosis(true);
-                            setShowAutoFilter(false);
-                            window.scrollTo({ top: 0, behavior: "smooth" });
+                            if (autoFilterDiagMap[s.idx]) {
+                              // 이미 진단됐으면 토글 (닫기)
+                              setAutoFilterDiagMap(prev => {
+                                const next = { ...prev };
+                                delete next[s.idx];
+                                return next;
+                              });
+                            } else {
+                              const result = diagnosNumbers(s.numbers, draws, bayesStats);
+                              setAutoFilterDiagMap(prev => ({ ...prev, [s.idx]: result }));
+                            }
                           }}
-                          className="flex-1 py-1.5 text-xs font-semibold rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition"
+                          className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition
+                            ${autoFilterDiagMap[s.idx]
+                              ? "bg-indigo-100 text-indigo-700 border border-indigo-300"
+                              : "bg-indigo-600 text-white hover:bg-indigo-700"}`}
                         >
-                          🔍 진단하기
+                          {autoFilterDiagMap[s.idx] ? "▲ 접기" : "🔍 진단하기"}
                         </button>
                         <button
                           onClick={() => {
@@ -1492,6 +1503,44 @@ export default function GeneratePage() {
                           ✅ 사용하기
                         </button>
                       </div>
+
+                      {/* ▼ 인라인 진단 결과 */}
+                      {autoFilterDiagMap[s.idx] && (() => {
+                        const dr = autoFilterDiagMap[s.idx];
+                        return (
+                          <div className="mt-3 pt-3 border-t border-emerald-200">
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="text-xs font-bold text-indigo-700">🔍 진단 결과</span>
+                              <span className={`text-sm font-extrabold ${dr.score >= 70 ? "text-green-600" : dr.score >= 50 ? "text-yellow-600" : "text-red-500"}`}>
+                                {dr.score}점
+                              </span>
+                            </div>
+                            <div className="space-y-1">
+                              {dr.criteria.map((c, ci) => (
+                                <div key={ci} className="flex items-start gap-1.5 text-[11px]">
+                                  <span>{c.pass ? "✅" : "❌"}</span>
+                                  <span className={c.pass ? "text-gray-700" : "text-gray-400"}>{c.label}</span>
+                                  <span className="ml-auto text-gray-400 shrink-0">{c.pass ? `+${c.points}` : "0"}점</span>
+                                </div>
+                              ))}
+                            </div>
+                            {dr.score >= 50 && (
+                              <button
+                                onClick={() => {
+                                  setSets([{ idx: 1, icon: "🎯", method: "조건필터", category: "패턴기반", desc: `진단 ${dr.score}점`, numbers: s.numbers }]);
+                                  setSavedSets(new Set());
+                                  setShowAutoFilter(false);
+                                  window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
+                                }}
+                                className="mt-2 w-full py-1.5 text-xs font-semibold rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition"
+                              >
+                                ✅ 이 번호 사용하기
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })()}
+
                     </div>
                   );
                 })}
