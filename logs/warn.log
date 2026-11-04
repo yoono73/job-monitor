@@ -155,3 +155,4 @@
 2026-11-02 01:20:45,720 WARNING 나라일터(네트워크) 오류: HTTPSConnectionPool(host='apis.data.go.kr', port=443): Read timed out. (read timeout=8)
 2026-11-02 01:20:54,239 WARNING 나라일터(정보화) 오류: HTTPSConnectionPool(host='apis.data.go.kr', port=443): Read timed out. (read timeout=8)
 2026-11-02 01:21:02,878 WARNING 나라일터(시스템) 오류: HTTPSConnectionPool(host='apis.data.go.kr', port=443): Read timed out. (read timeout=8)
+2026-11-04 07:08:19,286 WARNING KRIC 오류: HTTPSConnectionPool(host='www.kric.go.kr', port=443): Max retries exceeded with url: /jsp/board/portal/sub03/org/recruitList.jsp?menuId=M080201 (Caused by NameResolutionError("HTTPSConnection(host='www.kric.go.kr', port=443): Failed to resolve 'www.kric.go.kr' ([Errno -3] Temporary failure in name resolution)"))
