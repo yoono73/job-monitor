@@ -1417,6 +1417,66 @@ export default function StatsPage() {
         </div>
       )}
 
+      {/* ── 📅 최근 20회 출현 타임라인 ── */}
+      {timelineData && (
+        <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 mb-5">
+          <h3 className="text-xs font-bold text-gray-700 mb-1 flex items-center gap-1.5">
+            <span>📅</span> 번호별 최근 20회 출현 타임라인
+            <span className="bg-indigo-100 text-indigo-600 text-[9px] font-extrabold px-1.5 py-0.5 rounded-full ml-1">NEW</span>
+          </h3>
+          <p className="text-[10px] text-gray-400 mb-3 bg-indigo-50 rounded-lg px-3 py-2">
+            <span className="text-indigo-600 font-bold">💡 읽는 법:</span> 각 행 = 번호(1~45), 각 점 = 회차(왼쪽=오래됨→오른쪽=최신). <span className="font-semibold text-indigo-700">●채움</span>=출현, ○=미출현. 오른쪽 숫자는 현재 연속 미출현 횟수.
+          </p>
+          {/* 열 헤더 (최근 20회 역순) */}
+          <div className="flex items-center gap-0 mb-1 pl-14 pr-8">
+            {Array.from({ length: 20 }, (_, i) => (
+              <div key={i} className="w-4 text-center">
+                {i === 0 && <span className="text-[8px] text-gray-300">↑오래</span>}
+                {i === 19 && <span className="text-[8px] text-gray-300">최신↑</span>}
+              </div>
+            ))}
+          </div>
+          <div className="space-y-0.5 overflow-x-auto">
+            {timelineData.map(({ number, present, streak }) => {
+              const hitCount = present.filter(Boolean).length;
+              const isHot = hitCount >= 5;
+              const isCold = hitCount <= 2;
+              return (
+                <div key={number} className="flex items-center gap-1 hover:bg-gray-50 rounded px-1 py-0.5">
+                  {/* 번호 볼 */}
+                  <div className="w-7 shrink-0">
+                    <span className={`inline-flex items-center justify-center rounded-full text-[9px] font-bold w-6 h-6 shadow-sm ${ballColor(number)}`}>{number}</span>
+                  </div>
+                  {/* 도트 타임라인 */}
+                  <div className="flex gap-0.5 flex-1">
+                    {present.map((hit, i) => (
+                      <div
+                        key={i}
+                        className={`w-3.5 h-3.5 rounded-full border transition-all shrink-0 ${
+                          hit
+                            ? isHot ? "bg-rose-500 border-rose-400" : "bg-indigo-500 border-indigo-400"
+                            : "bg-gray-100 border-gray-200"
+                        }`}
+                      />
+                    ))}
+                  </div>
+                  {/* 연속 미출현 / 빈도 */}
+                  <div className="text-right shrink-0 w-16 flex items-center gap-1 justify-end">
+                    <span className="text-[9px] text-gray-400">{hitCount}회</span>
+                    {streak >= 10 && (
+                      <span className="text-[9px] font-extrabold text-orange-500 bg-orange-50 px-1 rounded">{streak}연속↑</span>
+                    )}
+                    {streak < 10 && streak >= 6 && (
+                      <span className="text-[9px] font-bold text-amber-500">{streak}↑</span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* ── 🧪 전략 백테스팅 ── */}
       {backtestResults && (
         <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 mb-5">
@@ -1687,66 +1747,6 @@ export default function StatsPage() {
           ))}
         </div>
       </div>
-
-      {/* ── 📅 최근 20회 출현 타임라인 ── */}
-      {timelineData && (
-        <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 mb-5">
-          <h3 className="text-xs font-bold text-gray-700 mb-1 flex items-center gap-1.5">
-            <span>📅</span> 번호별 최근 20회 출현 타임라인
-            <span className="bg-indigo-100 text-indigo-600 text-[9px] font-extrabold px-1.5 py-0.5 rounded-full ml-1">NEW</span>
-          </h3>
-          <p className="text-[10px] text-gray-400 mb-3 bg-indigo-50 rounded-lg px-3 py-2">
-            <span className="text-indigo-600 font-bold">💡 읽는 법:</span> 각 행 = 번호(1~45), 각 점 = 회차(왼쪽=오래됨→오른쪽=최신). <span className="font-semibold text-indigo-700">●채움</span>=출현, ○=미출현. 오른쪽 숫자는 현재 연속 미출현 횟수.
-          </p>
-          {/* 열 헤더 (최근 20회 역순) */}
-          <div className="flex items-center gap-0 mb-1 pl-14 pr-8">
-            {Array.from({ length: 20 }, (_, i) => (
-              <div key={i} className="w-4 text-center">
-                {i === 0 && <span className="text-[8px] text-gray-300">↑오래</span>}
-                {i === 19 && <span className="text-[8px] text-gray-300">최신↑</span>}
-              </div>
-            ))}
-          </div>
-          <div className="space-y-0.5 overflow-x-auto">
-            {timelineData.map(({ number, present, streak }) => {
-              const hitCount = present.filter(Boolean).length;
-              const isHot = hitCount >= 5;
-              const isCold = hitCount <= 2;
-              return (
-                <div key={number} className="flex items-center gap-1 hover:bg-gray-50 rounded px-1 py-0.5">
-                  {/* 번호 볼 */}
-                  <div className="w-7 shrink-0">
-                    <span className={`inline-flex items-center justify-center rounded-full text-[9px] font-bold w-6 h-6 shadow-sm ${ballColor(number)}`}>{number}</span>
-                  </div>
-                  {/* 도트 타임라인 */}
-                  <div className="flex gap-0.5 flex-1">
-                    {present.map((hit, i) => (
-                      <div
-                        key={i}
-                        className={`w-3.5 h-3.5 rounded-full border transition-all shrink-0 ${
-                          hit
-                            ? isHot ? "bg-rose-500 border-rose-400" : "bg-indigo-500 border-indigo-400"
-                            : "bg-gray-100 border-gray-200"
-                        }`}
-                      />
-                    ))}
-                  </div>
-                  {/* 연속 미출현 / 빈도 */}
-                  <div className="text-right shrink-0 w-16 flex items-center gap-1 justify-end">
-                    <span className="text-[9px] text-gray-400">{hitCount}회</span>
-                    {streak >= 10 && (
-                      <span className="text-[9px] font-extrabold text-orange-500 bg-orange-50 px-1 rounded">{streak}연속↑</span>
-                    )}
-                    {streak < 10 && streak >= 6 && (
-                      <span className="text-[9px] font-bold text-amber-500">{streak}↑</span>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
 
       {/* ── ⏰ 오버듀 분석 ── */}
       {overdueStats.length > 0 && (
