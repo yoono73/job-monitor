@@ -236,6 +236,85 @@ export default function StatsPage() {
   const [patternTab, setPatternTab] = useState<"sum" | "odd" | "sec" | "con" | "end">("sum");
   const [heatmapMode, setHeatmapMode] = useState<"50" | "100" | "200" | "common">("50");
 
+  /* ─── 추천 이력 ─── */
+  interface RecommendHistory {
+    id: number;
+    draw_no: number;
+    strategy: string;
+    numbers: number[];
+    prize_rank: number | null;
+    prize_amount: number;
+    matched_count: number | null;
+    note: string | null;
+    created_at: string;
+  }
+  const [history, setHistory] = useState<RecommendHistory[]>([]);
+  const [historyInput, setHistoryInput] = useState<{ draw_no: string; strategy: string; prize_rank: string }>({ draw_no: "", strategy: "", prize_rank: "" });
+  const [historyMsg, setHistoryMsg] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<number | null>(null);
+
+  const RANK_LABELS: Record<number, { label: string; color: string; amount: string }> = {
+    1: { label: "1등", color: "text-yellow-600 bg-yellow-50 border-yellow-300", amount: "수억원" },
+    2: { label: "2등", color: "text-orange-600 bg-orange-50 border-orange-300", amount: "~5000만" },
+    3: { label: "3등", color: "text-blue-600 bg-blue-50 border-blue-300", amount: "~150만" },
+    4: { label: "4등", color: "text-emerald-600 bg-emerald-50 border-emerald-300", amount: "5만원" },
+    5: { label: "5등", color: "text-gray-600 bg-gray-50 border-gray-300", amount: "5천원" },
+  };
+
+  useEffect(() => {
+    supabase.from("recommendation_history").select("*").order("draw_no", { ascending: false }).limit(50)
+      .then(({ data }) => { if (data) setHistory(data as RecommendHistory[]); });
+  }, [supabase]);
+
+  const saveHistoryResult = async (id: number, rank: number | null) => {
+    const amount = rank ? [0, 0, 0, 0, 50000, 5000][rank] ?? 0 : 0;
+    const matched = rank ? [0, 6, 5, 5, 4, 3][rank] ?? 0 : 0;
+    const { error } = await supabase.from("recommendation_history").update({
+      prize_rank: rank, prize_amount: amount, matched_count: matched,
+    }).eq("id", id);
+    if (!error) {
+      setHistory(prev => prev.map(h => h.id === id ? { ...h, prize_rank: rank, prize_amount: amount, matched_count: matched } : h));
+      setEditingId(null);
+      setHistoryMsg("결과 저장됐어요 ✓");
+      setTimeout(() => setHistoryMsg(null), 2000);
+    }
+  };
+
+  const addHistoryManual = async () => {
+    const draw = parseInt(historyInput.draw_no);
+    const rank = historyInput.prize_rank ? parseInt(historyInput.prize_rank) : null;
+    if (!draw || !historyInput.strategy) return;
+    const amount = rank ? [0, 0, 0, 0, 50000, 5000][rank] ?? 0 : 0;
+    const matched = rank ? [0, 6, 5, 5, 4, 3][rank] ?? 0 : 0;
+    const { data, error } = await supabase.from("recommendation_history").insert({
+      draw_no: draw, strategy: historyInput.strategy, numbers: [],
+      prize_rank: rank, prize_amount: amount, matched_count: matched, note: "수동 입력",
+    }).select().single();
+    if (!error && data) {
+      setHistory(prev => [data as RecommendHistory, ...prev]);
+      setHistoryInput({ draw_no: "", strategy: "", prize_rank: "" });
+      setHistoryMsg("이력이 추가됐어요 ✓");
+      setTimeout(() => setHistoryMsg(null), 2000);
+    }
+  };
+
+  /* 전략별 성과 집계 */
+  const strategyStats = useMemo(() => {
+    const map: Record<string, { total: number; hits: number; amount: number; best: number | null }> = {};
+    history.forEach(h => {
+      if (!map[h.strategy]) map[h.strategy] = { total: 0, hits: 0, amount: 0, best: null };
+      map[h.strategy].total++;
+      if (h.prize_rank !== null) {
+        map[h.strategy].hits++;
+        map[h.strategy].amount += h.prize_amount ?? 0;
+        if (map[h.strategy].best === null || h.prize_rank < map[h.strategy].best!) {
+          map[h.strategy].best = h.prize_rank;
+        }
+      }
+    });
+    return Object.entries(map).sort((a, b) => b[1].hits - a[1].hits);
+  }, [history]);
+
   useEffect(() => {
     Promise.all([
       supabase.from("lotto_analysis_meta").select("*").order("id", { ascending: false }).limit(1).single(),
@@ -683,6 +762,133 @@ export default function StatsPage() {
 
   return (
     <div className="px-4 py-5 md:px-6 lg:px-8 max-w-3xl mx-auto">
+
+      {/* ── 🎫 추천 이력 & 전략 성과 ── */}
+      <div className="bg-white border border-orange-200 rounded-2xl p-4 mb-5 shadow-sm">
+        <h3 className="text-sm font-extrabold text-orange-700 mb-3">🎫 내 추천 이력 &amp; 전략 성과</h3>
+
+        {/* 수동 이력 추가 */}
+        <div className="flex gap-2 mb-3 flex-wrap">
+          <input
+            type="number" placeholder="회차" value={historyInput.draw_no}
+            onChange={e => setHistoryInput(p => ({ ...p, draw_no: e.target.value }))}
+            className="w-20 text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-orange-300"
+          />
+          <input
+            type="text" placeholder="전략명" value={historyInput.strategy}
+            onChange={e => setHistoryInput(p => ({ ...p, strategy: e.target.value }))}
+            className="flex-1 min-w-24 text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-orange-300"
+          />
+          <select
+            value={historyInput.prize_rank}
+            onChange={e => setHistoryInput(p => ({ ...p, prize_rank: e.target.value }))}
+            className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-orange-300"
+          >
+            <option value="">미당첨</option>
+            <option value="5">5등(3개)</option>
+            <option value="4">4등(4개)</option>
+            <option value="3">3등(5개)</option>
+            <option value="2">2등(5+보너스)</option>
+            <option value="1">1등(6개)</option>
+          </select>
+          <button onClick={addHistoryManual}
+            className="text-xs font-bold px-3 py-1.5 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition">
+            추가
+          </button>
+        </div>
+        {historyMsg && <p className="text-xs text-emerald-600 font-semibold mb-2">{historyMsg}</p>}
+
+        {/* 전략별 통계 */}
+        {strategyStats.length > 0 && (
+          <div className="mb-3">
+            <p className="text-xs font-bold text-gray-500 mb-1.5">전략별 성과</p>
+            <div className="grid grid-cols-1 gap-1.5">
+              {strategyStats.map(([strategy, stat]) => (
+                <div key={strategy} className="flex items-center justify-between bg-gray-50 rounded-xl px-3 py-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="text-xs font-bold text-gray-700 truncate">{strategy}</span>
+                    <span className="text-xs text-gray-400">{stat.total}회</span>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {stat.best !== null && (
+                      <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded-full border ${RANK_LABELS[stat.best]?.color ?? "text-gray-600 bg-gray-50 border-gray-300"}`}>
+                        최고 {RANK_LABELS[stat.best]?.label}
+                      </span>
+                    )}
+                    <span className="text-xs font-semibold text-orange-600">
+                      {stat.hits}/{stat.total} 당첨
+                    </span>
+                    {stat.amount > 0 && (
+                      <span className="text-xs text-emerald-600 font-bold">
+                        +{stat.amount.toLocaleString()}원
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* 이력 목록 */}
+        {history.length > 0 ? (
+          <div className="space-y-1.5">
+            <p className="text-xs font-bold text-gray-500 mb-1">최근 이력</p>
+            {history.slice(0, 20).map(h => (
+              <div key={h.id} className={`flex items-center justify-between rounded-xl px-3 py-2 border
+                ${h.prize_rank ? "bg-orange-50 border-orange-200" : "bg-gray-50 border-gray-100"}`}>
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="text-xs font-bold text-gray-500 shrink-0">{h.draw_no}회</span>
+                  <span className="text-xs font-semibold text-gray-700 truncate">{h.strategy}</span>
+                  {h.note && h.note !== "수동 입력" && (
+                    <span className="text-[10px] text-gray-400 truncate hidden sm:block">{h.note}</span>
+                  )}
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {editingId === h.id ? (
+                    <div className="flex gap-1">
+                      {[5,4,3,2,1].map(r => (
+                        <button key={r} onClick={() => saveHistoryResult(h.id, r)}
+                          className="text-[10px] px-1.5 py-0.5 rounded-lg border border-gray-300 hover:bg-orange-100 hover:border-orange-400 transition">
+                          {r}등
+                        </button>
+                      ))}
+                      <button onClick={() => saveHistoryResult(h.id, null)}
+                        className="text-[10px] px-1.5 py-0.5 rounded-lg border border-gray-300 hover:bg-gray-200 transition">
+                        꽝
+                      </button>
+                      <button onClick={() => setEditingId(null)} className="text-[10px] text-gray-400 ml-0.5">✕</button>
+                    </div>
+                  ) : (
+                    <>
+                      {h.prize_rank !== null ? (
+                        <>
+                          <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded-full border ${RANK_LABELS[h.prize_rank]?.color ?? ""}`}>
+                            {RANK_LABELS[h.prize_rank]?.label}
+                          </span>
+                          {h.prize_amount > 0 && (
+                            <span className="text-[11px] text-emerald-600 font-bold">+{h.prize_amount.toLocaleString()}</span>
+                          )}
+                        </>
+                      ) : (
+                        <span className="text-[11px] text-gray-400">미입력</span>
+                      )}
+                      <button onClick={() => setEditingId(h.id)}
+                        className="text-[10px] text-gray-400 hover:text-orange-500 transition ml-0.5">
+                        ✏️
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-xs text-gray-400 text-center py-3">
+            아직 기록이 없어요 — 번호 생성 후 🎫 구매 버튼을 눌러보세요
+          </p>
+        )}
+      </div>
 
       {/* ── 베이지안 헤더 ── */}
       <div className="bg-gradient-to-br from-violet-600 via-purple-600 to-indigo-600 rounded-2xl p-5 mb-5 shadow-lg text-center relative overflow-hidden">

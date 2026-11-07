@@ -770,18 +770,21 @@ function Ball({ n }: { n: number }) {
 }
 
 /* ─── Result Card ─── */
-function ResultCard({ s, copied, saved, onCopy, onSave }: {
+function ResultCard({ s, copied, saved, bought, onCopy, onSave, onBuy }: {
   s: LottoSet;
   copied: number | null;
   saved: Set<number>;
+  bought: Set<number>;
   onCopy: (nums: Six, idx: number) => void;
   onSave: (s: LottoSet) => void;
+  onBuy: (s: LottoSet) => void;
 }) {
   const cc = CAT_COLOR[s.category] ?? CAT_COLOR["균형기반"];
   const isSaved = saved.has(s.idx);
+  const isBought = bought.has(s.idx);
   return (
     <div className={`bg-white border rounded-2xl p-4 shadow-sm hover:shadow-md transition-shadow
-      ${isSaved ? "border-emerald-300 bg-emerald-50/30" : "border-gray-200"}`}>
+      ${isBought ? "border-orange-300 bg-orange-50/30" : isSaved ? "border-emerald-300 bg-emerald-50/30" : "border-gray-200"}`}>
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2 min-w-0">
           <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full shrink-0 ${cc.badge}`}>
@@ -810,6 +813,16 @@ function ResultCard({ s, copied, saved, onCopy, onSave }: {
                 : "text-gray-400 border-gray-200 hover:text-emerald-600 hover:border-emerald-400"}`}
           >
             {isSaved ? "✓ 저장됨" : "저장"}
+          </button>
+          <button
+            onClick={() => !isBought && onBuy(s)}
+            disabled={isBought}
+            className={`text-xs px-2.5 py-1 rounded-lg border transition
+              ${isBought
+                ? "text-orange-600 border-orange-300 bg-orange-50 cursor-default"
+                : "text-gray-400 border-gray-200 hover:text-orange-500 hover:border-orange-400"}`}
+          >
+            {isBought ? "🎫 구매됨" : "🎫 구매"}
           </button>
         </div>
       </div>
@@ -941,6 +954,7 @@ export default function GeneratePage() {
   const [showMom,   setShowMom] = useState(false);
   const [userId,    setUserId]  = useState<string | null>(null);
   const [savedSets, setSavedSets] = useState<Set<number>>(new Set());
+  const [boughtSets, setBoughtSets] = useState<Set<number>>(new Set());
   const [saveMsg,   setSaveMsg] = useState<string | null>(null);
   const [splitMode, setSplitMode] = useState(false);
   const [myIdxs,    setMyIdxs]   = useState<Set<number>>(new Set());
@@ -1089,7 +1103,23 @@ export default function GeneratePage() {
     try { localStorage.setItem("lotto_favorites", JSON.stringify(updated)); } catch {}
   };
 
-  const switchTab = (mom: boolean) => { setShowMom(mom); setSets(null); setSavedSets(new Set()); };
+  const switchTab = (mom: boolean) => { setShowMom(mom); setSets(null); setSavedSets(new Set()); setBoughtSets(new Set()); };
+
+  /* 구매 이력 저장 */
+  const buyRecord = useCallback(async (s: LottoSet) => {
+    if (!nextDrawNo) return;
+    const { error } = await supabase.from("recommendation_history").insert({
+      draw_no:  nextDrawNo,
+      strategy: s.method,
+      numbers:  s.numbers,
+      note:     s.desc,
+    });
+    if (!error) {
+      setBoughtSets(prev => new Set([...prev, s.idx]));
+      setSaveMsg(`${nextDrawNo}회차 구매 기록됐어요 🎫`);
+      setTimeout(() => setSaveMsg(null), 2500);
+    }
+  }, [nextDrawNo, supabase]);
 
   const saveSet = useCallback(async (s: LottoSet) => {
     if (!userId || !nextDrawNo) return;
@@ -1826,7 +1856,7 @@ export default function GeneratePage() {
                 </div>
               )}
               <div className="space-y-3">
-                {sets.map(s => <ResultCard key={s.idx} s={s} copied={copied} saved={savedSets} onCopy={copy} onSave={saveSet} />)}
+                {sets.map(s => <ResultCard key={s.idx} s={s} copied={copied} saved={savedSets} bought={boughtSets} onCopy={copy} onSave={saveSet} onBuy={buyRecord} />)}
               </div>
               <div className="flex items-center justify-between px-1 py-2 mt-3 text-sm text-gray-500">
                 <span>총 <strong className="text-gray-800">5장</strong></span>
@@ -2088,7 +2118,7 @@ export default function GeneratePage() {
                         {myIdxs.has(s.idx) ? "👤 나" : "👥 상대"}
                       </button>
                     )}
-                    <ResultCard s={s} copied={copied} saved={savedSets} onCopy={copy} onSave={saveSet} />
+                    <ResultCard s={s} copied={copied} saved={savedSets} bought={boughtSets} onCopy={copy} onSave={saveSet} onBuy={buyRecord} />
                   </div>
                 ))}
               </div>
