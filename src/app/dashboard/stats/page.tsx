@@ -206,21 +206,37 @@ function PatternBar({
   );
 }
 
-/* ─── passPatternFilter (same logic as generate page) ─── */
+/* ─── passPatternFilter (8조건, generate 페이지와 동일) ─── */
 function passFilter(nums: number[]): boolean {
-  const sum = nums.reduce((a, b) => a + b, 0);
-  const odd = nums.filter(n => n % 2 === 1).length;
   const sorted = [...nums].sort((a, b) => a - b);
+  // 조건1: 합계 110~150
+  const sum = sorted.reduce((a, b) => a + b, 0);
+  if (sum < 110 || sum > 150) return false;
+  // 조건2: 홀수 3~4개
+  const odd = sorted.filter(n => n % 2 === 1).length;
+  if (odd < 3 || odd > 4) return false;
+  // 조건3: 구간 3개 이상
   const secs = new Set(sorted.map(n => n <= 10 ? 1 : n <= 20 ? 2 : n <= 30 ? 3 : n <= 40 ? 4 : 5)).size;
-  let cons = 0;
-  for (let i = 0; i < sorted.length - 1; i++) if (sorted[i + 1] - sorted[i] === 1) cons++;
-  const endUniq = new Set(nums.map(n => n % 10)).size;
+  if (secs < 3) return false;
+  // 조건4: 연속 1쌍 이상
+  const consArr = sorted.slice(0, -1).map((n, i) => sorted[i + 1] - n === 1);
+  if (!consArr.some(Boolean)) return false;
+  // 조건5: 3연속 없음
+  for (let i = 0; i < consArr.length - 1; i++)
+    if (consArr[i] && consArr[i + 1]) return false;
+  // 조건6: 끝자리 중복 ≤ 2개
+  const tailFreq = sorted.reduce((m, n) => { const t = n % 10; m[t] = (m[t] || 0) + 1; return m; }, {} as Record<number, number>);
+  if (Math.max(...Object.values(tailFreq)) > 2) return false;
+  // 조건7: 저번호(1~22) 2~4개
+  const lowCnt = sorted.filter(n => n <= 22).length;
+  if (lowCnt < 2 || lowCnt > 4) return false;
+  // 조건8: AC값 ≥ 7
   const diffs = new Set<number>();
   for (let i = 0; i < sorted.length; i++)
     for (let j = i + 1; j < sorted.length; j++)
       diffs.add(sorted[j] - sorted[i]);
-  const ac = diffs.size - 5;
-  return sum >= 115 && sum <= 140 && odd === 3 && secs >= 3 && cons === 1 && endUniq >= 5 && ac >= 8;
+  if (diffs.size - 5 < 7) return false;
+  return true;
 }
 
 /* ─── Page ─── */
@@ -421,35 +437,40 @@ export default function StatsPage() {
       if (passFilter(nums)) passCount++;
     });
 
-    // 패턴 통과율 세부 분해
-    let passSum = 0, passOdd = 0, passSec = 0, passCon = 0, passEnd = 0, passAC = 0;
+    // 패턴 통과율 세부 분해 (8조건)
+    let passSum = 0, passOdd = 0, passSec = 0, passCon = 0, passNoTriple = 0, passTailFreq = 0, passLow = 0, passAC = 0;
     draws.forEach(d => {
       const nums = [d.n1, d.n2, d.n3, d.n4, d.n5, d.n6];
-      const sum  = nums.reduce((a, b) => a + b, 0);
-      const odd  = nums.filter(n => n % 2 === 1).length;
       const sorted = [...nums].sort((a, b) => a - b);
+      const sum  = sorted.reduce((a, b) => a + b, 0);
+      const odd  = sorted.filter(n => n % 2 === 1).length;
       const secs = new Set(sorted.map(n => n <= 10 ? 1 : n <= 20 ? 2 : n <= 30 ? 3 : n <= 40 ? 4 : 5)).size;
-      let cons = 0;
-      for (let i = 0; i < sorted.length - 1; i++) if (sorted[i + 1] - sorted[i] === 1) cons++;
-      const endUniq = new Set(nums.map(n => n % 10)).size;
-      // AC값: 고유 차이 수 - 5
+      const consArr = sorted.slice(0, -1).map((n, i) => sorted[i + 1] - n === 1);
+      const hasCon = consArr.some(Boolean);
+      let hasTriple = false;
+      for (let i = 0; i < consArr.length - 1; i++) if (consArr[i] && consArr[i + 1]) { hasTriple = true; break; }
+      const tailFreq = sorted.reduce((m, n) => { const t = n % 10; m[t] = (m[t] || 0) + 1; return m; }, {} as Record<number, number>);
+      const maxTail = Math.max(...Object.values(tailFreq));
+      const lowCnt = sorted.filter(n => n <= 22).length;
       const diffs = new Set<number>();
       for (let i = 0; i < sorted.length; i++)
         for (let j = i + 1; j < sorted.length; j++)
           diffs.add(sorted[j] - sorted[i]);
       const ac = diffs.size - 5;
-      if (sum >= 115 && sum <= 140) passSum++;
-      if (odd === 3) passOdd++;
+      if (sum >= 110 && sum <= 150) passSum++;
+      if (odd >= 3 && odd <= 4) passOdd++;
       if (secs >= 3) passSec++;
-      if (cons === 1) passCon++;
-      if (endUniq >= 5) passEnd++;
-      if (ac >= 8) passAC++;
+      if (hasCon) passCon++;
+      if (!hasTriple) passNoTriple++;
+      if (maxTail <= 2) passTailFreq++;
+      if (lowCnt >= 2 && lowCnt <= 4) passLow++;
+      if (ac >= 7) passAC++;
     });
 
     return {
       total,
       passCount,
-      passSum, passOdd, passSec, passCon, passEnd, passAC,
+      passSum, passOdd, passSec, passCon, passNoTriple, passTailFreq, passLow, passAC,
       sum: { labels: sumLabels, counts: sumCounts, highlight: sumHighlight },
       odd: { labels: oddLabels, counts: oddCounts, highlight: oddHighlight },
       sec: { labels: secLabels, counts: secCounts, highlight: secHighlight },
@@ -1010,9 +1031,9 @@ export default function StatsPage() {
             {/* 패턴 최종 판정 */}
             <div className={`rounded-xl p-2.5 text-center border ${passed ? "bg-emerald-50 border-emerald-300" : "bg-amber-50 border-amber-300"}`}>
               <p className={`text-xs font-extrabold ${passed ? "text-emerald-700" : "text-amber-700"}`}>
-                {passed ? "✅ 4조건 모두 통과 — 패턴 필터 합격" : "⚠️ 일부 조건 미통과 — 이런 회차도 있어요"}
+                {passed ? "✅ 8조건 모두 통과 — 패턴 필터 합격" : "⚠️ 일부 조건 미통과 — 이런 회차도 있어요"}
               </p>
-              <p className="text-[10px] text-gray-400 mt-0.5">역대 1등 당첨번호의 약 38~42%가 4조건 동시 통과</p>
+              <p className="text-[10px] text-gray-400 mt-0.5">역대 1등 당첨번호 중 8조건 동시 통과 비율 (실시간 계산)</p>
             </div>
           </div>
         );
@@ -1126,7 +1147,7 @@ export default function StatsPage() {
             </h3>
             {/* 전체 통과율 - 크게 */}
             <div className="bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 rounded-xl p-4 mb-4 text-center">
-              <p className="text-xs text-emerald-600 font-semibold mb-1">6조건 동시 통과</p>
+              <p className="text-xs text-emerald-600 font-semibold mb-1">8조건 동시 통과</p>
               <p className="text-4xl font-extrabold text-emerald-600 tracking-tight">
                 {((patternStats.passCount / patternStats.total) * 100).toFixed(1)}%
               </p>
@@ -1137,12 +1158,14 @@ export default function StatsPage() {
             {/* 조건별 개별 통과율 */}
             <div className="grid grid-cols-2 gap-3">
               {[
-                { label: "합계 115~140", count: patternStats.passSum, icon: "📊", color: "emerald" },
-                { label: "홀수 정확히 3개", count: patternStats.passOdd, icon: "⚖️", color: "violet" },
+                { label: "합계 110~150", count: patternStats.passSum, icon: "📊", color: "emerald" },
+                { label: "홀수 3~4개", count: patternStats.passOdd, icon: "⚖️", color: "violet" },
                 { label: "구간 3개+", count: patternStats.passSec, icon: "📍", color: "amber" },
-                { label: "연속 정확히 1쌍", count: patternStats.passCon, icon: "🔗", color: "sky" },
-                { label: "끝자리 5종↑", count: patternStats.passEnd, icon: "🔢", color: "rose" },
-                { label: "AC값 ≥8", count: patternStats.passAC, icon: "📐", color: "indigo" },
+                { label: "연속 1쌍+", count: patternStats.passCon, icon: "🔗", color: "sky" },
+                { label: "3연속 없음", count: patternStats.passNoTriple, icon: "🚫", color: "rose" },
+                { label: "끝자리 중복≤2", count: patternStats.passTailFreq, icon: "🔢", color: "rose" },
+                { label: "저번호 2~4개", count: patternStats.passLow, icon: "🎯", color: "amber" },
+                { label: "AC값 ≥7", count: patternStats.passAC, icon: "📐", color: "indigo" },
               ].map(({ label, count, icon, color }) => {
                 const pct = ((count / patternStats.total) * 100).toFixed(1);
                 const textCls = color === "emerald" ? "text-emerald-600" : color === "violet" ? "text-violet-600" : color === "amber" ? "text-amber-600" : color === "sky" ? "text-sky-600" : color === "rose" ? "text-rose-600" : "text-indigo-600";
