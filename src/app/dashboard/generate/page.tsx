@@ -1358,9 +1358,17 @@ export default function GeneratePage() {
         <div className="flex items-center gap-2 mb-2">
           <span className="text-base">📢</span>
           <h3 className="text-sm font-bold text-blue-800">최근 업데이트</h3>
-          <span className="ml-auto text-[11px] text-blue-400 font-mono">2026-11-01</span>
+          <span className="ml-auto text-[11px] text-blue-400 font-mono">2026-11-07</span>
         </div>
         <ul className="space-y-1.5 text-xs text-blue-700">
+          <li className="flex items-start gap-1.5">
+            <span className="mt-0.5 shrink-0">🎉</span>
+            <span>
+              <span className="font-semibold text-violet-700">v2.4 신규 전략 3개</span> —{" "}
+              1~1249회 전체 분석 기반: <span className="font-semibold">저중고균형 · 최근핫번호 · 황금필터강화</span>.
+              아래 전략 선택 드롭다운에서 <span className="bg-violet-100 text-violet-700 px-1 rounded font-bold">NEW</span> 딱지 항목을 확인하세요.
+            </span>
+          </li>
           <li className="flex items-start gap-1.5">
             <span className="mt-0.5 shrink-0">🔍</span>
             <span>
