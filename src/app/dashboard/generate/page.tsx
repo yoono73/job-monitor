@@ -765,6 +765,13 @@ const METHODS: Record<MethodKey, { category: string; icon: string; label: string
 
 // 새로 추가된 전략 (드롭다운에 NEW 표시) — 신규 전략이 생기면 여기에 키를 추가하세요
 const NEW_KEYS: MethodKey[] = ["tail_diversity", "golden_zone", "overdue_pick", "triple_common", "zone_balance", "hot_recent", "golden_combo"];
+// 각 NEW 전략의 추가 날짜 (표시용)
+const NEW_DATES: Partial<Record<MethodKey, string>> = {
+  tail_diversity: "2026. 11. 1.", golden_zone: "2026. 11. 1.",
+  overdue_pick:   "2026. 11. 1.", triple_common: "2026. 11. 1.",
+  zone_balance:   "2026. 11. 7.", hot_recent:   "2026. 11. 7.",
+  golden_combo:   "2026. 11. 7.",
+};
 
 const CATEGORY_GROUPS = [
   { cat: "개인화",  keys: ["fav"] as MethodKey[] },
@@ -2071,7 +2078,10 @@ export default function GeneratePage() {
                   </span>
                   <span className="text-base shrink-0">{m.icon}</span>
                   {NEW_KEYS.includes(key) && (
-                    <span className="text-[10px] font-extrabold px-1.5 py-0.5 rounded bg-rose-500 text-white shrink-0">NEW</span>
+                    <span className="flex flex-col items-center shrink-0">
+                      <span className="text-[10px] font-extrabold px-1.5 py-0.5 rounded bg-rose-500 text-white leading-tight">NEW</span>
+                      <span className="text-[8px] text-rose-400 font-mono leading-tight whitespace-nowrap">{NEW_DATES[key]}</span>
+                    </span>
                   )}
                   <div className="flex-1 min-w-0">
                     <select
