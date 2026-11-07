@@ -410,6 +410,59 @@ export default function StatsPage() {
     return { counts, max, min, total: recent.length };
   }, [draws, heatmapMode]);
 
+  /* ─── 최근 20회 출현 타임라인 ─── */
+  const timelineData = useMemo(() => {
+    if (draws.length < 20) return null;
+    const recent = draws.slice(-20);
+    return Array.from({ length: 45 }, (_, i) => i + 1).map(n => ({
+      number: n,
+      present: recent.map(d => [d.n1,d.n2,d.n3,d.n4,d.n5,d.n6].includes(n)),
+      streak: (() => {
+        let s = 0;
+        for (let j = recent.length - 1; j >= 0; j--) {
+          if (![recent[j].n1,recent[j].n2,recent[j].n3,recent[j].n4,recent[j].n5,recent[j].n6].includes(n)) s++;
+          else break;
+        }
+        return s;
+      })(),
+    }));
+  }, [draws]);
+
+  /* ─── 최근 트렌드 (10회 단위) ─── */
+  const trendData = useMemo(() => {
+    if (draws.length < 30) return null;
+    const recent = draws.slice(-50);
+    const windows: { label: string; avgSum: number; avgOdd: number; avgSec: number; from: number; to: number }[] = [];
+    for (let i = 0; i < recent.length; i += 10) {
+      const chunk = recent.slice(i, i + 10);
+      if (chunk.length < 5) break;
+      const avgSum = chunk.reduce((a, d) => a + [d.n1,d.n2,d.n3,d.n4,d.n5,d.n6].reduce((s,n)=>s+n,0), 0) / chunk.length;
+      const avgOdd = chunk.reduce((a, d) => a + [d.n1,d.n2,d.n3,d.n4,d.n5,d.n6].filter(n=>n%2===1).length, 0) / chunk.length;
+      const avgSec = chunk.reduce((a, d) => {
+        return a + new Set([d.n1,d.n2,d.n3,d.n4,d.n5,d.n6].map(n=>n<=10?1:n<=20?2:n<=30?3:n<=40?4:5)).size;
+      }, 0) / chunk.length;
+      windows.push({ label: `${chunk[0].draw_no}~${chunk[chunk.length-1].draw_no}`, avgSum, avgOdd, avgSec, from: chunk[0].draw_no, to: chunk[chunk.length-1].draw_no });
+    }
+    return windows;
+  }, [draws]);
+
+  /* ─── 번호 주기 불규칙성 (변동계수) ─── */
+  const periodData = useMemo(() => {
+    if (draws.length < 50) return null;
+    return Array.from({ length: 45 }, (_, i) => i + 1).map(n => {
+      const appearances: number[] = [];
+      draws.forEach((d, idx) => {
+        if ([d.n1,d.n2,d.n3,d.n4,d.n5,d.n6].includes(n)) appearances.push(idx);
+      });
+      if (appearances.length < 4) return { number: n, cv: 999, avgPeriod: 999, minPeriod: 999, maxPeriod: 999, count: appearances.length };
+      const periods: number[] = [];
+      for (let j = 1; j < appearances.length; j++) periods.push(appearances[j] - appearances[j-1]);
+      const avg = periods.reduce((a,b)=>a+b,0) / periods.length;
+      const std = Math.sqrt(periods.reduce((a,b)=>a+(b-avg)**2,0) / periods.length);
+      return { number: n, cv: std / avg, avgPeriod: avg, minPeriod: Math.min(...periods), maxPeriod: Math.max(...periods), count: appearances.length };
+    }).filter(x => x.cv < 900).sort((a,b) => a.cv - b.cv);
+  }, [draws]);
+
   /* ─── 3구간 공통 번호 ─── */
   const commonData = useMemo(() => {
     if (draws.length === 0) return null;
@@ -758,6 +811,84 @@ export default function StatsPage() {
           </div>
         );
       })()}
+
+      {/* ── 📈 최근 추세 (10회 단위) ── */}
+      {trendData && trendData.length >= 3 && (
+        <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 mb-5">
+          <h3 className="text-xs font-bold text-gray-700 mb-1 flex items-center gap-1.5">
+            <span>📈</span> 최근 50회 — 10회 단위 추세 분석
+            <span className="bg-cyan-100 text-cyan-600 text-[9px] font-extrabold px-1.5 py-0.5 rounded-full ml-1">NEW</span>
+          </h3>
+          <p className="text-[10px] text-gray-400 mb-3 bg-cyan-50 rounded-lg px-3 py-2">
+            <span className="text-cyan-600 font-bold">💡 흐름 파악:</span> 최근 50회를 10회씩 묶어 합계/홀수/구간 평균 추세를 봅니다. 최신 블록이 오른쪽.
+          </p>
+          {/* 합계 추세 */}
+          <div className="mb-4">
+            <p className="text-[10px] font-semibold text-gray-600 mb-2">📊 합계 평균 추세 <span className="text-gray-400 font-normal">(이론: ~129.5)</span></p>
+            <div className="flex items-end gap-2 h-16">
+              {trendData.map(({ label, avgSum }, i) => {
+                const minS = Math.min(...trendData.map(t=>t.avgSum));
+                const maxS = Math.max(...trendData.map(t=>t.avgSum));
+                const h = maxS > minS ? ((avgSum - minS) / (maxS - minS) * 44 + 20) : 32;
+                const isLatest = i === trendData.length - 1;
+                const isGolden = avgSum >= 115 && avgSum <= 155;
+                return (
+                  <div key={label} className="flex-1 flex flex-col items-center gap-1">
+                    <span className={`text-[9px] font-bold ${isLatest ? "text-cyan-700" : "text-gray-500"}`}>{avgSum.toFixed(0)}</span>
+                    <div
+                      className={`w-full rounded-t-md transition-all ${isLatest ? (isGolden ? "bg-cyan-500" : "bg-rose-400") : (isGolden ? "bg-cyan-200" : "bg-gray-200")}`}
+                      style={{ height: `${h}px` }}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+            <div className="flex gap-2 mt-1">
+              {trendData.map(({ label }, i) => (
+                <div key={label} className="flex-1 text-center">
+                  <span className={`text-[8px] ${i === trendData.length-1 ? "text-cyan-600 font-bold" : "text-gray-300"}`}>{label.split('~')[0]}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+          {/* 홀수/구간 그리드 */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <p className="text-[10px] font-semibold text-gray-600 mb-1.5">⚖️ 홀수 개수 평균</p>
+              <div className="flex items-end gap-1.5 h-10">
+                {trendData.map(({ label, avgOdd }, i) => {
+                  const h = Math.max((avgOdd / 6) * 36, 6);
+                  const isLatest = i === trendData.length - 1;
+                  const ok = avgOdd >= 2.5 && avgOdd <= 3.5;
+                  return (
+                    <div key={label} className="flex-1 flex flex-col items-center gap-0.5">
+                      <span className={`text-[8px] font-bold ${isLatest ? "text-violet-700" : "text-gray-400"}`}>{avgOdd.toFixed(1)}</span>
+                      <div className={`w-full rounded-t ${isLatest ? (ok ? "bg-violet-500" : "bg-rose-400") : "bg-violet-200"}`} style={{ height: `${h}px` }} />
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+            <div>
+              <p className="text-[10px] font-semibold text-gray-600 mb-1.5">📍 커버 구간 평균</p>
+              <div className="flex items-end gap-1.5 h-10">
+                {trendData.map(({ label, avgSec }, i) => {
+                  const h = Math.max((avgSec / 5) * 36, 6);
+                  const isLatest = i === trendData.length - 1;
+                  const ok = avgSec >= 3.5;
+                  return (
+                    <div key={label} className="flex-1 flex flex-col items-center gap-0.5">
+                      <span className={`text-[8px] font-bold ${isLatest ? "text-amber-700" : "text-gray-400"}`}>{avgSec.toFixed(1)}</span>
+                      <div className={`w-full rounded-t ${isLatest ? (ok ? "bg-amber-500" : "bg-orange-300") : "bg-amber-200"}`} style={{ height: `${h}px` }} />
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+          <p className="text-[9px] text-gray-400 mt-2 text-center">최신 블록 색 진함 · 황금구간(합계 115~155)=파랑 · 벗어남=빨강</p>
+        </div>
+      )}
 
       {/* ════════════════════════════════════════════════ */}
       {/* ── 🏆 1등 당첨번호 패턴 분석 ── */}
@@ -1351,6 +1482,66 @@ export default function StatsPage() {
         </div>
       </div>
 
+      {/* ── 📅 최근 20회 출현 타임라인 ── */}
+      {timelineData && (
+        <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 mb-5">
+          <h3 className="text-xs font-bold text-gray-700 mb-1 flex items-center gap-1.5">
+            <span>📅</span> 번호별 최근 20회 출현 타임라인
+            <span className="bg-indigo-100 text-indigo-600 text-[9px] font-extrabold px-1.5 py-0.5 rounded-full ml-1">NEW</span>
+          </h3>
+          <p className="text-[10px] text-gray-400 mb-3 bg-indigo-50 rounded-lg px-3 py-2">
+            <span className="text-indigo-600 font-bold">💡 읽는 법:</span> 각 행 = 번호(1~45), 각 점 = 회차(왼쪽=오래됨→오른쪽=최신). <span className="font-semibold text-indigo-700">●채움</span>=출현, ○=미출현. 오른쪽 숫자는 현재 연속 미출현 횟수.
+          </p>
+          {/* 열 헤더 (최근 20회 역순) */}
+          <div className="flex items-center gap-0 mb-1 pl-14 pr-8">
+            {Array.from({ length: 20 }, (_, i) => (
+              <div key={i} className="w-4 text-center">
+                {i === 0 && <span className="text-[8px] text-gray-300">↑오래</span>}
+                {i === 19 && <span className="text-[8px] text-gray-300">최신↑</span>}
+              </div>
+            ))}
+          </div>
+          <div className="space-y-0.5 overflow-x-auto">
+            {timelineData.map(({ number, present, streak }) => {
+              const hitCount = present.filter(Boolean).length;
+              const isHot = hitCount >= 5;
+              const isCold = hitCount <= 2;
+              return (
+                <div key={number} className="flex items-center gap-1 hover:bg-gray-50 rounded px-1 py-0.5">
+                  {/* 번호 볼 */}
+                  <div className="w-7 shrink-0">
+                    <span className={`inline-flex items-center justify-center rounded-full text-[9px] font-bold w-6 h-6 shadow-sm ${ballColor(number)}`}>{number}</span>
+                  </div>
+                  {/* 도트 타임라인 */}
+                  <div className="flex gap-0.5 flex-1">
+                    {present.map((hit, i) => (
+                      <div
+                        key={i}
+                        className={`w-3.5 h-3.5 rounded-full border transition-all shrink-0 ${
+                          hit
+                            ? isHot ? "bg-rose-500 border-rose-400" : "bg-indigo-500 border-indigo-400"
+                            : "bg-gray-100 border-gray-200"
+                        }`}
+                      />
+                    ))}
+                  </div>
+                  {/* 연속 미출현 / 빈도 */}
+                  <div className="text-right shrink-0 w-16 flex items-center gap-1 justify-end">
+                    <span className="text-[9px] text-gray-400">{hitCount}회</span>
+                    {streak >= 10 && (
+                      <span className="text-[9px] font-extrabold text-orange-500 bg-orange-50 px-1 rounded">{streak}연속↑</span>
+                    )}
+                    {streak < 10 && streak >= 6 && (
+                      <span className="text-[9px] font-bold text-amber-500">{streak}↑</span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* ── ⏰ 오버듀 분석 ── */}
       {overdueStats.length > 0 && (
         <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 mb-5">
@@ -1400,6 +1591,66 @@ export default function StatsPage() {
           <p className="text-[10px] text-gray-400 mt-3 bg-gray-50 rounded-lg p-2 leading-relaxed">
             오버듀 지수 1.0 = 평균 주기만큼 미출현. 2.0 = 평균의 2배 기다리는 중. 수학적으로 출현 확률을 높이지는 않으나 참고 지표로 활용.
           </p>
+        </div>
+      )}
+
+      {/* ── 🔄 번호 주기 불규칙성 분석 ── */}
+      {periodData && periodData.length > 0 && (
+        <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 mb-5">
+          <h3 className="text-xs font-bold text-gray-700 mb-1 flex items-center gap-1.5">
+            <span>🔄</span> 번호 출현 주기 불규칙성 분석
+            <span className="bg-teal-100 text-teal-600 text-[9px] font-extrabold px-1.5 py-0.5 rounded-full ml-1">NEW</span>
+          </h3>
+          <p className="text-[10px] text-gray-400 mb-3 bg-teal-50 rounded-lg px-3 py-2">
+            <span className="text-teal-600 font-bold">💡 변동계수(CV) = 표준편차 ÷ 평균 주기.</span> 낮을수록 규칙적(예측 용이), 높을수록 불규칙(변덕스러운 번호). 단, 로또는 무작위이므로 참고용.
+          </p>
+          <div className="grid grid-cols-2 gap-4">
+            {/* 규칙적인 번호 TOP 7 */}
+            <div>
+              <p className="text-[10px] font-bold text-teal-700 mb-2 flex items-center gap-1">
+                <span>✅</span> 규칙적 (낮은 CV)
+              </p>
+              <div className="space-y-1.5">
+                {periodData.slice(0, 7).map(({ number, cv, avgPeriod, minPeriod, maxPeriod }) => (
+                  <div key={number} className="flex items-center gap-2">
+                    <span className={`inline-flex items-center justify-center rounded-full text-[9px] font-bold w-6 h-6 shadow-sm shrink-0 ${ballColor(number)}`}>{number}</span>
+                    <div className="flex-1">
+                      <div className="flex justify-between text-[9px] text-gray-400 mb-0.5">
+                        <span>avg {avgPeriod.toFixed(1)}회</span>
+                        <span className="text-teal-600 font-bold">CV {cv.toFixed(2)}</span>
+                      </div>
+                      <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                        <div className="h-full bg-gradient-to-r from-teal-400 to-emerald-400 rounded-full" style={{ width: `${Math.max(100 - cv * 60, 5)}%` }} />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            {/* 불규칙적인 번호 TOP 7 */}
+            <div>
+              <p className="text-[10px] font-bold text-rose-700 mb-2 flex items-center gap-1">
+                <span>⚡</span> 불규칙 (높은 CV)
+              </p>
+              <div className="space-y-1.5">
+                {[...periodData].sort((a,b)=>b.cv-a.cv).slice(0, 7).map(({ number, cv, avgPeriod }) => (
+                  <div key={number} className="flex items-center gap-2">
+                    <span className={`inline-flex items-center justify-center rounded-full text-[9px] font-bold w-6 h-6 shadow-sm shrink-0 ${ballColor(number)}`}>{number}</span>
+                    <div className="flex-1">
+                      <div className="flex justify-between text-[9px] text-gray-400 mb-0.5">
+                        <span>avg {avgPeriod.toFixed(1)}회</span>
+                        <span className="text-rose-600 font-bold">CV {cv.toFixed(2)}</span>
+                      </div>
+                      <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                        <div className="h-full bg-gradient-to-r from-rose-400 to-orange-400 rounded-full" style={{ width: `${Math.min(cv * 40, 100)}%` }} />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+          <p className="text-[9px] text-gray-300 mt-2 text-center">* 역대 전체 회차 기반 · 최소 4회 이상 출현한 번호만 포함</p>
         </div>
       )}
 
