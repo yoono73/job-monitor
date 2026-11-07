@@ -21,7 +21,8 @@ type MethodKey =
   | "bayes" | "fav" | "prime" | "norepeat"
   | "overdue" | "recent20" | "bayes_overdue"
   | "spread" | "recent10" | "midbias"
-  | "tail_diversity" | "golden_zone" | "overdue_pick" | "triple_common";
+  | "tail_diversity" | "golden_zone" | "overdue_pick" | "triple_common"
+  | "zone_balance" | "hot_recent" | "golden_combo";
 
 interface BayesStat {
   number: number;
@@ -592,6 +593,68 @@ function genTripleCommon(draws: DrawRow[]): Six {
   return genBalance();
 }
 
+/* ── 저중고균형 전략 (zone_balance) ── */
+// 1~15 / 16~30 / 31~45 세 구간에서 각 2개씩 균등 선택
+// 1249회 분석: 2-2-2 패턴이 15.13%로 1위
+function genZoneBalance(): Six {
+  for (let t = 0; t < 8000; t++) {
+    const lo = Array.from({length:15},(_,i)=>i+1).sort(()=>Math.random()-0.5).slice(0,2);
+    const mi = Array.from({length:15},(_,i)=>i+16).sort(()=>Math.random()-0.5).slice(0,2);
+    const hi = Array.from({length:15},(_,i)=>i+31).sort(()=>Math.random()-0.5).slice(0,2);
+    const nums = [...lo,...mi,...hi].sort((a,b)=>a-b) as Six;
+    if (isBalanced(nums)) return nums;
+  }
+  return genBalance();
+}
+
+/* ── 최근핫번호 전략 (hot_recent) ── */
+// 최근 50회 과출현 번호(기대값 이상) 중 3~4개 의무 포함
+// 1249회 분석: 최근 38, 27, 42, 31, 16, 18이 +3 이상 초과 출현
+function genHotRecent(draws: DrawRow[]): Six {
+  if (draws.length < 20) return genRecent20(draws);
+  const recent = draws.slice(0, Math.min(50, draws.length));
+  const freq = new Array(46).fill(0);
+  recent.forEach(d => [d.n1,d.n2,d.n3,d.n4,d.n5,d.n6].forEach(n => freq[n]++));
+  const expected = recent.length * 6 / 45;
+  // 기대값 이상 출현 번호 (핫 풀)
+  const hotPool = Array.from({length:45},(_,i)=>i+1).filter(n=>freq[n]>=expected);
+  const topHot = hotPool.length >= 8 ? hotPool : Array.from({length:45},(_,i)=>i+1)
+    .sort((a,b)=>freq[b]-freq[a]).slice(0,12);
+  const others = Array.from({length:45},(_,i)=>i+1).filter(n=>!topHot.includes(n));
+  for (let t = 0; t < 8000; t++) {
+    const hotCount = Math.min(topHot.length, Math.floor(Math.random()*2)+3); // 3~4개
+    const picked = [...topHot].sort(()=>Math.random()-0.5).slice(0,hotCount);
+    const rest = [...others].sort(()=>Math.random()-0.5).slice(0,6-hotCount);
+    const nums = [...picked,...rest].sort((a,b)=>a-b) as Six;
+    if (isBalanced(nums)) return nums;
+  }
+  return genRecent20(draws);
+}
+
+/* ── 황금필터강화 전략 (golden_combo) ── */
+// 합계 115~165 + 홀수 2~4개 + 5구간 중 3구간 이상 + 연속쌍 0~1개 동시 충족
+// 1249회 분석: 황금합계+2~4홀 복합 필터가 55.64% 적중
+function genGoldenCombo(): Six {
+  const secOf = (n: number) => n<=10?0:n<=20?1:n<=30?2:n<=40?3:4;
+  for (let t = 0; t < 20000; t++) {
+    const nums = Array.from({length:45},(_,i)=>i+1).sort(()=>Math.random()-0.5).slice(0,6);
+    const s = nums.sort((a,b)=>a-b) as Six;
+    // 조건1: 합계 115~165
+    const sum = s.reduce((a,b)=>a+b,0);
+    if (sum<115||sum>165) continue;
+    // 조건2: 홀수 2~4개
+    const odd = s.filter(n=>n%2===1).length;
+    if (odd<2||odd>4) continue;
+    // 조건3: 5구간 중 3구간 이상
+    if (new Set(s.map(secOf)).size<3) continue;
+    // 조건4: 연속쌍 0~1개
+    let cons=0; for(let i=0;i<s.length-1;i++) if(s[i+1]-s[i]===1) cons++;
+    if (cons>1) continue;
+    return s;
+  }
+  return genBalance();
+}
+
 /* ── 고급 8조건 필터 자동 생성 ── */
 function genAutoFilter(): Six {
   // AC값(Arithmetic Complexity): 모든 번호쌍 차이의 고유값 개수 - 5
@@ -695,17 +758,20 @@ const METHODS: Record<MethodKey, { category: string; icon: string; label: string
   golden_zone:  { category: "패턴기반", icon: "🥇", label: "황금구간",    desc: "합계 120~155 · 3저3고 · 연속쌍 1개 황금조건" },
   overdue_pick:  { category: "통계기반", icon: "⏳", label: "최장공백",    desc: "20회 이상 미출현 번호 2~3개 우선 포함" },
   triple_common: { category: "통계기반", icon: "🔥", label: "3구간공통",   desc: "최근 50·100·200회 모두 평균 이상 출현 번호 집중" },
+  zone_balance:  { category: "균형기반", icon: "🏛️", label: "저중고균형",   desc: "1~15 · 16~30 · 31~45 세 구간 각 2개씩 균등 선택" },
+  hot_recent:    { category: "통계기반", icon: "🌡️", label: "최근핫번호",   desc: "최근 50회 과출현 번호 3~4개 의무 포함 · 모멘텀 전략" },
+  golden_combo:  { category: "패턴기반", icon: "💎", label: "황금필터강화",  desc: "합계115~165 + 2~4홀 + 3구간↑ + 연속0~1쌍 4조건 동시 충족" },
 };
 
 // 새로 추가된 전략 (드롭다운에 NEW 표시) — 신규 전략이 생기면 여기에 키를 추가하세요
-const NEW_KEYS: MethodKey[] = ["tail_diversity", "golden_zone", "overdue_pick", "triple_common"];
+const NEW_KEYS: MethodKey[] = ["tail_diversity", "golden_zone", "overdue_pick", "triple_common", "zone_balance", "hot_recent", "golden_combo"];
 
 const CATEGORY_GROUPS = [
   { cat: "개인화",  keys: ["fav"] as MethodKey[] },
   { cat: "베이지안", keys: ["bayes", "bayes_overdue"] as MethodKey[] },
-  { cat: "통계기반", keys: ["hot", "cold", "pairs", "carryover", "norepeat", "overdue", "recent20", "recent10", "tail_diversity", "overdue_pick", "triple_common"] as MethodKey[] },
-  { cat: "패턴기반", keys: ["pattern", "hot_pattern", "cold_pattern", "ac", "prime", "midbias", "golden_zone"] as MethodKey[] },
-  { cat: "균형기반", keys: ["random", "balance", "section", "ending", "spread"] as MethodKey[] },
+  { cat: "통계기반", keys: ["hot", "cold", "pairs", "carryover", "norepeat", "overdue", "recent20", "recent10", "tail_diversity", "overdue_pick", "triple_common", "hot_recent"] as MethodKey[] },
+  { cat: "패턴기반", keys: ["pattern", "hot_pattern", "cold_pattern", "ac", "prime", "midbias", "golden_zone", "golden_combo"] as MethodKey[] },
+  { cat: "균형기반", keys: ["random", "balance", "section", "ending", "spread", "zone_balance"] as MethodKey[] },
 ];
 
 const DEFAULT_KEYS: MethodKey[] = [
@@ -741,6 +807,9 @@ function runGenerator(key: MethodKey, draws: DrawRow[], bayesStats?: BayesStat[]
     case "golden_zone":   return genGoldenZone();
     case "overdue_pick":  return genOverduePick(draws);
     case "triple_common": return genTripleCommon(draws);
+    case "zone_balance":  return genZoneBalance();
+    case "hot_recent":    return genHotRecent(draws);
+    case "golden_combo":  return genGoldenCombo();
   }
 }
 
