@@ -1,0 +1,6 @@
+OK    [학교법인한국폴리텍] 한국폴리텍대학 성남캠퍼스 업무직(대학운영직_사감) 채용 공고 → https://www.kopo.ac.kr/seongnam/board.do?menu=10526&mode=view&post=789418
+FAIL  [한국산업은행] 한국산업은행 전문직원(세무사) 채용공고 → https://recruit.kdb.co.kr
+FAIL  [한국산업은행] 한국산업은행 전문직원(기록연구사(대체채용)) 채용공고 → https://recruit.kdb.co.kr
+SKIP  [경기도 화성시 의회사무국] url=None 이미 처리됨
+FAIL  [문화체육관광부 한국예술종합학교] 한국예술종합학교 6급이하 공무원(행정8급, 행정9급) 전입 공고 → https://www.karts.ac.kr/nri/bbs/NuriBbsDetail.do?pageIndex=1&amp;bbsId=BBSNURI_0
+OK    [서울특별시 영등포구 보건소] 서울 영등포구보건소 임기제공무원(5급, 의사) 채용 재공고 → https://www.ydp.go.kr/www/selectEminwonView.do?menuFlag=03&amp;notAncmtMgtNo=399

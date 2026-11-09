@@ -168,3 +168,6 @@
 2026-11-06 02:02:43,619 WARNING 나라일터(정보화) 오류: HTTPSConnectionPool(host='apis.data.go.kr', port=443): Read timed out. (read timeout=8)
 2026-11-06 02:02:52,041 WARNING 나라일터(시스템) 오류: HTTPSConnectionPool(host='apis.data.go.kr', port=443): Read timed out. (read timeout=8)
 2026-11-07 14:55:58,106 WARNING MOEF 오류 page=5: HTTPSConnectionPool(host='apis.data.go.kr', port=443): Read timed out. (read timeout=20)
+2026-11-09 01:30:20,020 WARNING 나라일터(네트워크) 오류: HTTPSConnectionPool(host='apis.data.go.kr', port=443): Read timed out. (read timeout=8)
+2026-11-09 01:30:28,467 WARNING 나라일터(정보화) 오류: HTTPSConnectionPool(host='apis.data.go.kr', port=443): Read timed out. (read timeout=8)
+2026-11-09 01:30:37,033 WARNING 나라일터(시스템) 오류: HTTPSConnectionPool(host='apis.data.go.kr', port=443): Read timed out. (read timeout=8)
