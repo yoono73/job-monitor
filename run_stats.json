@@ -652,5 +652,11 @@
     "krid_ok": 3,
     "krid_fail": 0,
     "krid_collected": 28
+  },
+  {
+    "ts": "2026-11-10T18:39:16",
+    "krid_ok": 3,
+    "krid_fail": 0,
+    "krid_collected": 31
   }
 ]
