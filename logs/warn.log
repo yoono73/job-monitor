@@ -171,3 +171,4 @@
 2026-11-09 01:30:20,020 WARNING 나라일터(네트워크) 오류: HTTPSConnectionPool(host='apis.data.go.kr', port=443): Read timed out. (read timeout=8)
 2026-11-09 01:30:28,467 WARNING 나라일터(정보화) 오류: HTTPSConnectionPool(host='apis.data.go.kr', port=443): Read timed out. (read timeout=8)
 2026-11-09 01:30:37,033 WARNING 나라일터(시스템) 오류: HTTPSConnectionPool(host='apis.data.go.kr', port=443): Read timed out. (read timeout=8)
+2026-11-10 03:59:49,003 WARNING 나라일터 /getItem 실패 idx=308068: HTTPSConnectionPool(host='apis.data.go.kr', port=443): Read timed out. (read timeout=20)
