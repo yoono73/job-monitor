@@ -921,13 +921,12 @@ function ResultCard({ s, copied, saved, bought, onCopy, onSave, onBuy, onDiag, d
   return (
     <div className={`bg-white border rounded-2xl p-4 shadow-sm hover:shadow-md transition-shadow
       ${isBought ? "border-orange-300 bg-orange-50/30" : isSaved ? "border-emerald-300 bg-emerald-50/30" : "border-gray-200"}`}>
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-2 min-w-0">
+      {/* 상단: 카테고리 + 액션 버튼 */}
+      <div className="flex items-center justify-between mb-2.5">
+        <div className="flex items-center gap-1.5 min-w-0">
           <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full shrink-0 ${cc.badge}`}>
             {s.category}
           </span>
-          <span className="text-base shrink-0">{s.icon}</span>
-          <span className="font-bold text-gray-800 text-sm shrink-0">{s.method}</span>
           <span className="text-gray-400 text-xs truncate hidden sm:block">{s.desc}</span>
         </div>
         <div className="flex items-center gap-1.5 shrink-0 ml-2">
@@ -960,21 +959,31 @@ function ResultCard({ s, copied, saved, bought, onCopy, onSave, onBuy, onDiag, d
           >
             {isBought ? "🎫 구매됨" : "🎫 구매"}
           </button>
+        </div>
+      </div>
+
+      {/* 번호 행: 볼 + 패턴명 + 진단하기 */}
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {s.numbers.map((n, i) => <Ball key={i} n={n} />)}
+        </div>
+        <div className="flex items-center gap-1.5 shrink-0">
+          <span className="flex items-center gap-1 text-xs font-semibold text-gray-600 bg-gray-100 px-2 py-1 rounded-lg shrink-0">
+            <span>{s.icon}</span>
+            <span className="hidden sm:inline">{s.method}</span>
+          </span>
           <button
             onClick={handleDiag}
-            className={`text-xs px-2.5 py-1 rounded-lg border transition
+            className={`text-xs px-2.5 py-1 rounded-lg border transition font-medium shrink-0
               ${inlineDiag
                 ? "border-indigo-400 text-indigo-600 bg-indigo-50"
-                : "border-gray-200 text-gray-400 hover:text-indigo-600 hover:border-indigo-400"}`}
+                : "border-indigo-200 text-indigo-500 hover:text-indigo-600 hover:border-indigo-400 hover:bg-indigo-50"}`}
           >
-            🔍 진단{inlineDiag ? " ▲" : ""}
+            🔍 진단하기{inlineDiag ? " ▲" : ""}
           </button>
         </div>
       </div>
-      <div className="flex items-center gap-1.5 flex-wrap">
-        {s.numbers.map((n, i) => <Ball key={i} n={n} />)}
-      </div>
-      <p className="text-xs text-gray-400 mt-2 sm:hidden">{s.desc}</p>
+      <p className="text-xs text-gray-400 mt-1.5 sm:hidden">{s.desc}</p>
 
       {/* ── 인라인 진단 결과 ── */}
       {inlineDiag && (
