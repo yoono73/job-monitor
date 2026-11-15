@@ -129,7 +129,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       {/* ── 업데이트 공지 배너 ── */}
       <div className="bg-gradient-to-r from-violet-600 to-indigo-600 text-white text-xs font-semibold px-4 py-2 flex items-center justify-center gap-2 flex-wrap">
         <span className="bg-white text-violet-700 text-[9px] font-extrabold px-1.5 py-0.5 rounded-full shrink-0 animate-pulse">NEW</span>
-        <span>📊 v2.6 업데이트: 분산추천에 끝자리9 저출현 편향 반영 — 1~1250회 25년 데이터 통계 기반 확률 최적화</span>
+        <span>📊 v2.7 업데이트: 조건필터 합계 하한 완화(110→100) + 분산추천 끝자리9 편향 반영 — 저합계 번호 생성 복원</span>
       </div>
 
       {/* 본문 */}

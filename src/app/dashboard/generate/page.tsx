@@ -695,9 +695,9 @@ function genAutoFilter(): Six {
     const nums = Array.from({ length: 45 }, (_, i) => i + 1).sort(() => Math.random() - 0.5).slice(0, 6);
     const s = nums.sort((a, b) => a - b) as Six;
 
-    // 조건1: 합계 110~155 (실제 1등 분포 ~65% 커버)
+    // 조건1: 합계 100~155 (저합계 110 근처 번호 커버 위해 하한 완화)
     const sum = s.reduce((a, b) => a + b, 0);
-    if (sum < 110 || sum > 155) continue;
+    if (sum < 100 || sum > 155) continue;
 
     // 조건2: 홀수 2~4개 (3~4개는 너무 좁음, 2개도 충분히 출현)
     const odd = s.filter(n => n % 2 === 1).length;
