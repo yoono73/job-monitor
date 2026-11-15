@@ -331,42 +331,6 @@ export default function StatsPage() {
     return Object.entries(map).sort((a, b) => b[1].hits - a[1].hits);
   }, [history]);
 
-  /* 전략별 적중 개수 분석 (matched_count 자동 집계) */
-  const matchStats = useMemo(() => {
-    const map: Record<string, { total: number; totalMatch: number; best: number; cnt3plus: number; cnt4plus: number }> = {};
-    history.forEach(h => {
-      if (!map[h.strategy]) map[h.strategy] = { total: 0, totalMatch: 0, best: 0, cnt3plus: 0, cnt4plus: 0 };
-      map[h.strategy].total++;
-      if (h.matched_count !== null) {
-        map[h.strategy].totalMatch += h.matched_count;
-        if (h.matched_count > map[h.strategy].best) map[h.strategy].best = h.matched_count;
-        if (h.matched_count >= 3) map[h.strategy].cnt3plus++;
-        if (h.matched_count >= 4) map[h.strategy].cnt4plus++;
-      }
-    });
-    return Object.entries(map)
-      .map(([strategy, s]) => ({
-        strategy,
-        total: s.total,
-        avgMatch: s.total > 0 ? s.totalMatch / s.total : 0,
-        best: s.best,
-        cnt3plus: s.cnt3plus,
-        cnt4plus: s.cnt4plus,
-      }))
-      .sort((a, b) => b.avgMatch - a.avgMatch);
-  }, [history]);
-
-  /* 전체 성적 요약 */
-  const overallStats = useMemo(() => {
-    const checked = history.filter(h => h.matched_count !== null);
-    if (checked.length === 0) return null;
-    const totalMatch = checked.reduce((a, h) => a + (h.matched_count ?? 0), 0);
-    const best = Math.max(...checked.map(h => h.matched_count ?? 0));
-    const dist = [0, 0, 0, 0, 0, 0, 0];
-    checked.forEach(h => { if (h.matched_count !== null) dist[Math.min(h.matched_count, 6)]++; });
-    const bestEntry = checked.reduce((a, h) => ((h.matched_count ?? 0) > (a.matched_count ?? 0) ? h : a), checked[0]);
-    return { total: checked.length, totalMatch, avgMatch: totalMatch / checked.length, best, dist, bestEntry };
-  }, [history]);
 
   useEffect(() => {
     Promise.all([
@@ -821,224 +785,63 @@ export default function StatsPage() {
   return (
     <div className="px-4 py-5 md:px-6 lg:px-8 max-w-3xl mx-auto">
 
-      {/* ── 🏆 나의 번호 성적 분석 ── */}
-      <div className="bg-gradient-to-br from-orange-50 to-amber-50 border border-orange-200 rounded-2xl p-4 mb-5 shadow-sm">
-        <h3 className="text-sm font-extrabold text-orange-700 mb-3 flex items-center gap-1.5">
-          🏆 나의 번호 성적 분석
-          {overallStats && overallStats.best >= 4 && (
-            <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-yellow-400 text-yellow-900 animate-pulse">
-              🎉 {overallStats.best}개 적중!
-            </span>
-          )}
+      {/* ── 🎱 최근 당첨번호 ── */}
+      <div className="bg-white border border-gray-200 rounded-2xl p-4 mb-5 shadow-sm">
+        <h3 className="text-sm font-extrabold text-gray-800 mb-3 flex items-center gap-1.5">
+          🎱 최근 당첨번호
+          <span className="text-[11px] font-normal text-gray-400 ml-1">최근 5회차</span>
         </h3>
 
-        {/* 전체 요약 */}
-        {overallStats && (
-          <div className="grid grid-cols-3 gap-2 mb-4">
-            <div className="bg-white rounded-xl p-3 text-center shadow-sm border border-orange-100">
-              <p className="text-[10px] text-gray-400 mb-0.5">총 추천</p>
-              <p className="text-xl font-extrabold text-gray-800">{overallStats.total}<span className="text-xs font-normal text-gray-400">건</span></p>
-            </div>
-            <div className="bg-white rounded-xl p-3 text-center shadow-sm border border-orange-100">
-              <p className="text-[10px] text-gray-400 mb-0.5">평균 적중</p>
-              <p className="text-xl font-extrabold text-orange-600">{overallStats.avgMatch.toFixed(1)}<span className="text-xs font-normal text-gray-400">개</span></p>
-            </div>
-            <div className={`rounded-xl p-3 text-center shadow-sm border ${
-              overallStats.best >= 4 ? "bg-yellow-50 border-yellow-300" :
-              overallStats.best >= 3 ? "bg-emerald-50 border-emerald-200" : "bg-white border-orange-100"
-            }`}>
-              <p className="text-[10px] text-gray-400 mb-0.5">최고 적중</p>
-              <p className={`text-xl font-extrabold ${overallStats.best >= 4 ? "text-yellow-600" : overallStats.best >= 3 ? "text-emerald-600" : "text-gray-800"}`}>
-                {overallStats.best}<span className="text-xs font-normal text-gray-400">개</span>
-              </p>
-            </div>
-          </div>
-        )}
-
-        {/* 최고 성적 하이라이트 */}
-        {overallStats && overallStats.bestEntry && overallStats.best >= 3 && (
-          <div className={`rounded-xl p-3 mb-4 border-2 ${
-            overallStats.best >= 4 ? "bg-yellow-50 border-yellow-400" : "bg-emerald-50 border-emerald-300"
-          }`}>
-            <div className="flex items-center gap-2 mb-2">
-              <span className="text-base">{overallStats.best >= 4 ? "🥇" : "🥈"}</span>
-              <span className={`text-xs font-extrabold ${overallStats.best >= 4 ? "text-yellow-700" : "text-emerald-700"}`}>
-                최고 성적 — {overallStats.bestEntry.draw_no}회 · {overallStats.bestEntry.strategy}
-              </span>
-              <span className={`ml-auto text-[11px] font-bold px-2 py-0.5 rounded-full ${
-                overallStats.best >= 4 ? "bg-yellow-200 text-yellow-800" : "bg-emerald-200 text-emerald-800"
-              }`}>
-                {overallStats.best >= 4 ? `${overallStats.best}등` : "5등"} 🎊
-              </span>
-            </div>
-            <div className="flex gap-1.5 flex-wrap">
-              {overallStats.bestEntry.numbers?.map((n: number, i: number) => <Ball key={i} n={n} size="sm" />)}
-            </div>
-          </div>
-        )}
-
-        {/* 적중 개수 분포 */}
-        {overallStats && (
-          <div className="mb-4">
-            <p className="text-xs font-bold text-gray-500 mb-2">적중 개수 분포</p>
-            <div className="flex items-end gap-1 h-16">
-              {[0,1,2,3,4,5,6].map(cnt => {
-                const count = overallStats.dist[cnt] ?? 0;
-                const maxCnt = Math.max(...overallStats.dist, 1);
-                const heightPct = Math.round((count / maxCnt) * 100);
-                return (
-                  <div key={cnt} className="flex-1 flex flex-col items-center gap-0.5">
-                    <span className="text-[9px] text-gray-400 font-bold">{count > 0 ? count : ""}</span>
-                    <div className="w-full flex items-end" style={{ height: "44px" }}>
-                      <div
-                        className={`w-full rounded-t transition-all duration-700 ${
-                          cnt >= 4 ? "bg-yellow-400" : cnt === 3 ? "bg-emerald-400" : cnt >= 1 ? "bg-orange-200" : "bg-gray-200"
-                        }`}
-                        style={{ height: `${Math.max(heightPct, count > 0 ? 10 : 0)}%` }}
-                      />
+        {/* 최근 5회 당첨번호 목록 */}
+        {draws.length > 0 ? (
+          <div className="space-y-2">
+            {[...draws].sort((a, b) => b.draw_no - a.draw_no).slice(0, 5).map(d => {
+              const nums6 = [d.n1, d.n2, d.n3, d.n4, d.n5, d.n6];
+              return (
+                <div key={d.draw_no} className="bg-gray-50 rounded-xl px-3 py-2.5 border border-gray-100">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-extrabold text-gray-700">{d.draw_no}회</span>
+                      <span className="text-[10px] text-gray-400">{d.draw_date?.slice(0, 10)}</span>
                     </div>
-                    <span className="text-[9px] font-semibold text-gray-500">{cnt}개</span>
+                    <div className="flex items-center gap-1.5">
+                      {d.winners_1st !== null && d.winners_1st !== undefined && (
+                        <span className="text-[10px] text-gray-400">1등 {d.winners_1st}명</span>
+                      )}
+                      {d.prize_1st !== null && d.prize_1st !== undefined && (
+                        <span className="text-[10px] font-bold text-emerald-600">
+                          {(d.prize_1st / 100000000).toFixed(1)}억
+                        </span>
+                      )}
+                    </div>
                   </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        {/* 전략별 평균 적중 (matched_count 기반) */}
-        {matchStats.length > 0 && (
-          <div className="mb-4">
-            <p className="text-xs font-bold text-gray-500 mb-2">전략별 평균 적중 개수</p>
-            <div className="space-y-1.5">
-              {matchStats.slice(0, 8).map(s => (
-                <div key={s.strategy} className="flex items-center gap-2">
-                  <span className="text-[11px] font-semibold text-gray-600 w-20 shrink-0 truncate">{s.strategy}</span>
-                  <div className="flex-1 h-4 bg-gray-100 rounded-full overflow-hidden">
-                    <div
-                      className={`h-full rounded-full transition-all duration-500 ${
-                        s.avgMatch >= 2.5 ? "bg-gradient-to-r from-yellow-400 to-orange-400" :
-                        s.avgMatch >= 1.5 ? "bg-gradient-to-r from-orange-300 to-amber-400" :
-                        "bg-gradient-to-r from-gray-300 to-gray-400"
-                      }`}
-                      style={{ width: `${Math.min(s.avgMatch / 3 * 100, 100)}%` }}
-                    />
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {nums6.map((n, i) => <Ball key={i} n={n} size="sm" />)}
+                    <span className="text-gray-300 font-bold text-sm mx-0.5">+</span>
+                    <div className="inline-flex items-center justify-center w-7 h-7 rounded-full border-2 border-dashed border-gray-400 bg-white text-gray-500 text-xs font-bold">
+                      {d.bonus}
+                    </div>
                   </div>
-                  <div className="text-right w-24 shrink-0 flex items-center gap-1 justify-end">
-                    <span className={`text-[11px] font-bold ${s.avgMatch >= 2 ? "text-orange-600" : "text-gray-500"}`}>
-                      평균 {s.avgMatch.toFixed(1)}개
-                    </span>
-                    {s.best >= 4 && (
-                      <span className="text-[9px] font-bold px-1 py-0.5 rounded bg-yellow-100 text-yellow-700">최고{s.best}</span>
+                  {/* 합계·홀짝 요약 */}
+                  <div className="flex gap-2 mt-1.5">
+                    {d.num_sum !== null && (
+                      <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded ${
+                        d.num_sum >= 115 && d.num_sum <= 185 ? "bg-emerald-100 text-emerald-700" : "bg-orange-100 text-orange-600"
+                      }`}>합 {d.num_sum}</span>
+                    )}
+                    {d.odd_count !== null && (
+                      <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-violet-100 text-violet-700">
+                        홀{d.odd_count} 짝{6 - d.odd_count}
+                      </span>
                     )}
                   </div>
                 </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* 이력 목록 (matched_count 표시 강화) */}
-        {history.length > 0 ? (
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between mb-1">
-              <p className="text-xs font-bold text-gray-500">최근 추천 이력</p>
-              <div className="flex gap-1 items-center">
-                {historyMsg && <p className="text-[11px] text-emerald-600 font-semibold">{historyMsg}</p>}
-              </div>
-            </div>
-            {history.slice(0, 20).map(h => (
-              <div key={h.id} className={`flex items-center justify-between rounded-xl px-3 py-2 border
-                ${h.matched_count !== null && h.matched_count >= 4 ? "bg-yellow-50 border-yellow-300" :
-                  h.matched_count !== null && h.matched_count >= 3 ? "bg-emerald-50 border-emerald-200" :
-                  h.prize_rank ? "bg-orange-50 border-orange-200" : "bg-white border-gray-100"}`}>
-                <div className="flex items-center gap-2 min-w-0">
-                  <span className="text-xs font-bold text-gray-500 shrink-0">{h.draw_no}회</span>
-                  <span className="text-xs font-semibold text-gray-700 truncate">{h.strategy}</span>
-                  {h.numbers && h.numbers.length > 0 && (
-                    <div className="hidden sm:flex gap-0.5">
-                      {h.numbers.map((n: number, i: number) => <Ball key={i} n={n} size="sm" />)}
-                    </div>
-                  )}
-                </div>
-                <div className="flex items-center gap-1.5 shrink-0">
-                  {h.matched_count !== null ? (
-                    <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded-full ${
-                      h.matched_count >= 4 ? "bg-yellow-200 text-yellow-800" :
-                      h.matched_count >= 3 ? "bg-emerald-200 text-emerald-800" :
-                      h.matched_count >= 1 ? "bg-orange-100 text-orange-700" :
-                      "bg-gray-100 text-gray-400"
-                    }`}>
-                      {h.matched_count}개 적중
-                    </span>
-                  ) : (
-                    <>
-                      {h.prize_rank !== null ? (
-                        <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded-full border ${RANK_LABELS[h.prize_rank]?.color ?? ""}`}>
-                          {RANK_LABELS[h.prize_rank]?.label}
-                        </span>
-                      ) : (
-                        <span className="text-[11px] text-gray-300">대기중</span>
-                      )}
-                    </>
-                  )}
-                  {editingId === h.id ? (
-                    <div className="flex gap-1">
-                      {[5,4,3,2,1].map(r => (
-                        <button key={r} onClick={() => saveHistoryResult(h.id, r)}
-                          className="text-[10px] px-1.5 py-0.5 rounded-lg border border-gray-300 hover:bg-orange-100 hover:border-orange-400 transition">
-                          {r}등
-                        </button>
-                      ))}
-                      <button onClick={() => saveHistoryResult(h.id, null)}
-                        className="text-[10px] px-1.5 py-0.5 rounded-lg border border-gray-300 hover:bg-gray-200 transition">꽝</button>
-                      <button onClick={() => setEditingId(null)} className="text-[10px] text-gray-400 ml-0.5">✕</button>
-                    </div>
-                  ) : (
-                    <button onClick={() => setEditingId(h.id)}
-                      className="text-[10px] text-gray-300 hover:text-orange-500 transition">✏️</button>
-                  )}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         ) : (
-          <p className="text-xs text-gray-400 text-center py-3">
-            아직 기록이 없어요 — 번호 생성 후 💾 저장 버튼을 눌러보세요
-          </p>
+          <p className="text-xs text-gray-400 text-center py-4">데이터 로딩 중...</p>
         )}
-
-        {/* 수동 이력 추가 */}
-        <div className="mt-3 pt-3 border-t border-orange-100">
-          <p className="text-[10px] text-gray-400 mb-2">수동 이력 추가</p>
-          <div className="flex gap-2 flex-wrap">
-            <input
-              type="number" placeholder="회차" value={historyInput.draw_no}
-              onChange={e => setHistoryInput(p => ({ ...p, draw_no: e.target.value }))}
-              className="w-20 text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-orange-300"
-            />
-            <input
-              type="text" placeholder="전략명" value={historyInput.strategy}
-              onChange={e => setHistoryInput(p => ({ ...p, strategy: e.target.value }))}
-              className="flex-1 min-w-24 text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-orange-300"
-            />
-            <select
-              value={historyInput.prize_rank}
-              onChange={e => setHistoryInput(p => ({ ...p, prize_rank: e.target.value }))}
-              className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-orange-300"
-            >
-              <option value="">미당첨</option>
-              <option value="5">5등(3개)</option>
-              <option value="4">4등(4개)</option>
-              <option value="3">3등(5개)</option>
-              <option value="2">2등(5+보너스)</option>
-              <option value="1">1등(6개)</option>
-            </select>
-            <button onClick={addHistoryManual}
-              className="text-xs font-bold px-3 py-1.5 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition">
-              추가
-            </button>
-          </div>
-        </div>
       </div>
 
       {/* ── 베이지안 헤더 ── */}
