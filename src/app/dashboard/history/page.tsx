@@ -91,7 +91,6 @@ export default function HistoryPage() {
   const [loading, setLoading] = useState(true);
   const [filter,  setFilter]  = useState<"all" | "pending" | "bought" | "hit">("all");
   const [toggling, setToggling] = useState<string | null>(null);
-  const [deleting, setDeleting] = useState<string | null>(null);
   const [showStrategy, setShowStrategy] = useState(false);
 
   useEffect(() => {
@@ -153,19 +152,6 @@ export default function HistoryPage() {
     }
     setToggling(null);
   }, [supabase, toggling]);
-
-  /* ── 삭제 ── */
-  const deleteItem = useCallback(async (item: HistoryItem) => {
-    const id = item.saved.id;
-    if (deleting === id) return;
-    if (!confirm(`${item.saved.draw_no}회 번호를 삭제할까요?`)) return;
-    setDeleting(id);
-    const { error } = await supabase.from("saved_numbers").delete().eq("id", id);
-    if (!error) {
-      setItems(prev => prev.filter(it => it.saved.id !== id));
-    }
-    setDeleting(null);
-  }, [supabase, deleting]);
 
   /* ── 전략별 성과 ── */
   const strategyStats = useMemo(() => {
@@ -447,15 +433,6 @@ export default function HistoryPage() {
                     ${isPending ? "bg-amber-100 text-amber-600" : prizeBadge(prize)}`}>
                     {isPending ? "대기" : prize}
                   </span>
-                  {/* 삭제 버튼 */}
-                  <button
-                    onClick={() => deleteItem(it)}
-                    disabled={deleting === it.saved.id}
-                    className="text-gray-300 hover:text-red-500 transition-colors text-sm font-bold leading-none px-1"
-                    title="삭제"
-                  >
-                    {deleting === it.saved.id ? "…" : "✕"}
-                  </button>
                 </div>
               </div>
 

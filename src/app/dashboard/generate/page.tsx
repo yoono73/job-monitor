@@ -2041,14 +2041,16 @@ export default function GeneratePage() {
                 { n: 10, price: "1만원", color: "slate" },
                 { n: 20, price: "2만원", color: "teal" },
                 { n: 30, price: "3만원", color: "indigo" },
+                { n: 40, price: "4만원", color: "violet" },
                 { n: 50, price: "5만원", color: "rose" },
               ].map(({ n, price, color }) => {
                 const active = setCount === n;
                 const cls = {
-                  slate: active ? "bg-slate-700 text-white border-slate-700" : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100",
-                  teal:  active ? "bg-teal-600 text-white border-teal-600"   : "bg-teal-50 text-teal-700 border-teal-200 hover:bg-teal-100",
+                  slate:  active ? "bg-slate-700 text-white border-slate-700" : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100",
+                  teal:   active ? "bg-teal-600 text-white border-teal-600"   : "bg-teal-50 text-teal-700 border-teal-200 hover:bg-teal-100",
                   indigo: active ? "bg-indigo-600 text-white border-indigo-600" : "bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100",
-                  rose:  active ? "bg-rose-600 text-white border-rose-600"   : "bg-rose-50 text-rose-600 border-rose-200 hover:bg-rose-100",
+                  violet: active ? "bg-violet-600 text-white border-violet-600" : "bg-violet-50 text-violet-700 border-violet-200 hover:bg-violet-100",
+                  rose:   active ? "bg-rose-600 text-white border-rose-600"   : "bg-rose-50 text-rose-600 border-rose-200 hover:bg-rose-100",
                 }[color];
                 return (
                   <button key={n} onClick={() => updateSetCount(n)}
