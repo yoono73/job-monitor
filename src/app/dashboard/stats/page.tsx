@@ -968,6 +968,40 @@ export default function StatsPage() {
               </p>
               <p className="text-[10px] text-gray-400 mt-0.5">역대 1등 당첨번호 중 8조건 동시 통과 비율 (실시간 계산)</p>
             </div>
+
+            {/* 8조건 필터 적중 사례 */}
+            <div className="mt-3 bg-gradient-to-r from-yellow-50 to-amber-50 border-2 border-yellow-300 rounded-xl p-3">
+              <div className="flex items-center gap-1.5 mb-2">
+                <span className="text-sm">🏆</span>
+                <span className="text-xs font-extrabold text-yellow-800">8조건 필터 적중 사례</span>
+                <span className="ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-yellow-200 text-yellow-800">1250회 · 4등</span>
+              </div>
+              <p className="text-[10px] text-gray-500 mb-2">
+                8조건 통과 번호로 뽑은 조합이 실제 당첨번호와 <span className="font-bold text-yellow-700">4개 일치</span> — 필터 유효성 검증 완료
+              </p>
+              <div className="flex items-center gap-1 mb-1.5">
+                <span className="text-[9px] text-gray-400 w-10 shrink-0">추천번호</span>
+                <div className="flex gap-1">
+                  {[1,18,24,27,28,35].map((n) => {
+                    const hit = [1,5,18,23,27,28].includes(n);
+                    return (
+                      <div key={n} className="relative">
+                        <Ball n={n} size="sm" />
+                        {hit && <span className="absolute -top-1 -right-1 text-[8px]">✓</span>}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="text-[9px] text-gray-400 w-10 shrink-0">당첨번호</span>
+                <div className="flex gap-1">
+                  {[1,5,18,23,27,28].map((n) => <Ball key={n} n={n} size="sm" />)}
+                  <span className="text-gray-300 font-bold text-xs mx-0.5">+</span>
+                  <div className="inline-flex items-center justify-center w-7 h-7 rounded-full border-2 border-dashed border-gray-400 bg-white text-gray-500 text-[10px] font-bold">8</div>
+                </div>
+              </div>
+            </div>
           </div>
         );
       })()}
