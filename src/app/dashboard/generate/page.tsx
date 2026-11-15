@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo, useCallback } from "react";
+import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 
 /* ─── Types ─── */
@@ -895,7 +895,7 @@ function Ball({ n }: { n: number }) {
 }
 
 /* ─── Result Card ─── */
-function ResultCard({ s, copied, saved, bought, onCopy, onSave, onBuy }: {
+function ResultCard({ s, copied, saved, bought, onCopy, onSave, onBuy, onDiag }: {
   s: LottoSet;
   copied: number | null;
   saved: Set<number>;
@@ -903,6 +903,7 @@ function ResultCard({ s, copied, saved, bought, onCopy, onSave, onBuy }: {
   onCopy: (nums: Six, idx: number) => void;
   onSave: (s: LottoSet) => void;
   onBuy: (s: LottoSet) => void;
+  onDiag: (s: LottoSet) => void;
 }) {
   const cc = CAT_COLOR[s.category] ?? CAT_COLOR["균형기반"];
   const isSaved = saved.has(s.idx);
@@ -948,6 +949,12 @@ function ResultCard({ s, copied, saved, bought, onCopy, onSave, onBuy }: {
                 : "text-gray-400 border-gray-200 hover:text-orange-500 hover:border-orange-400"}`}
           >
             {isBought ? "🎫 구매됨" : "🎫 구매"}
+          </button>
+          <button
+            onClick={() => onDiag(s)}
+            className="text-xs px-2.5 py-1 rounded-lg border border-gray-200 text-gray-400 hover:text-indigo-600 hover:border-indigo-400 transition"
+          >
+            🔍 진단
           </button>
         </div>
       </div>
@@ -1097,6 +1104,8 @@ export default function GeneratePage() {
   const [showDiagnosis, setShowDiagnosis] = useState(false);
   const [diagNums,      setDiagNums]      = useState<Set<number>>(new Set());
   const [diagResult,    setDiagResult]    = useState<DiagResult | null>(null);
+  const [diagSource,    setDiagSource]    = useState<LottoSet | null>(null); // 어느 전략 번호인지
+  const diagSectionRef = useRef<HTMLDivElement>(null);
 
   // 조건 필터 자동 생성
   const [showAutoFilter,      setShowAutoFilter]      = useState(false);
@@ -1133,6 +1142,19 @@ export default function GeneratePage() {
     const result = diagnosNumbers(Array.from(nums), draws, bayesStats, pairStats);
     setDiagResult(result);
   };
+
+  // ResultCard의 🔍 진단 버튼 → 해당 세트 번호를 진단 패널에 자동 입력 + 즉시 실행
+  const openDiagForSet = useCallback((s: LottoSet) => {
+    setDiagSource(s);
+    setDiagNums(new Set(s.numbers));
+    setShowDiagnosis(true);
+    const result = diagnosNumbers(s.numbers, draws, bayesStats, pairStats);
+    setDiagResult(result);
+    // 진단 섹션으로 스크롤
+    setTimeout(() => {
+      diagSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 100);
+  }, [draws, bayesStats, pairStats]);
 
   const runAutoFilter = () => {
     setAutoFilterBusy(true);
@@ -1446,9 +1468,9 @@ export default function GeneratePage() {
       </div>
 
       {/* ━━━ 🔍 번호 진단 ━━━ */}
-      <div className="mb-5">
+      <div className="mb-5" ref={diagSectionRef}>
         <button
-          onClick={() => { setShowDiagnosis(v => !v); setDiagNums(new Set()); setDiagResult(null); }}
+          onClick={() => { setShowDiagnosis(v => !v); setDiagNums(new Set()); setDiagResult(null); setDiagSource(null); }}
           className="w-full flex items-center justify-between px-4 py-3 bg-gradient-to-r from-indigo-50 to-violet-50 border border-indigo-200 rounded-2xl hover:from-indigo-100 hover:to-violet-100 transition-all"
         >
           <div className="flex items-center gap-2">
@@ -1526,6 +1548,17 @@ export default function GeneratePage() {
             {/* 진단 결과 */}
             {diagResult && (
               <div className="space-y-3">
+                {/* 전략 출처 배너 */}
+                {diagSource && (
+                  <div className="flex items-center gap-2 bg-indigo-50 border border-indigo-200 rounded-xl px-3 py-2">
+                    <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full shrink-0 ${CAT_COLOR[diagSource.category]?.badge ?? "bg-gray-100 text-gray-500"}`}>
+                      {diagSource.category}
+                    </span>
+                    <span className="text-base">{diagSource.icon}</span>
+                    <span className="text-sm font-bold text-indigo-800">{diagSource.method}</span>
+                    <span className="text-xs text-indigo-500 truncate">{diagSource.desc}</span>
+                  </div>
+                )}
                 {/* 종합 점수 */}
                 <div className={`rounded-xl p-4 text-center border-2
                   ${diagResult.score >= 70 ? "bg-emerald-50 border-emerald-300" :
@@ -1588,9 +1621,11 @@ export default function GeneratePage() {
                   <button
                     onClick={() => {
                       const nums = Array.from(diagNums).sort((a, b) => a - b) as Six;
-                      setSets([{ idx: 1, icon: "🔍", method: "번호진단", category: "직접픽", desc: `진단점수 ${diagResult.score}점`, numbers: nums }]);
+                      const base = diagSource ?? { idx: 1, icon: "🔍", method: "번호진단", category: "직접픽" as const, desc: `진단점수 ${diagResult.score}점`, numbers: nums };
+                      setSets([{ ...base, idx: 1, numbers: nums, desc: diagSource ? `${diagSource.desc} (진단${diagResult.score}점)` : `진단점수 ${diagResult.score}점` }]);
                       setSavedSets(new Set());
                       setShowDiagnosis(false);
+                      setDiagSource(null);
                       window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
                     }}
                     className="w-full py-2.5 rounded-xl bg-indigo-600 text-white font-bold text-sm hover:bg-indigo-700 transition shadow-md"
@@ -1987,7 +2022,7 @@ export default function GeneratePage() {
                 </div>
               )}
               <div className="space-y-3">
-                {sets.map(s => <ResultCard key={s.idx} s={s} copied={copied} saved={savedSets} bought={boughtSets} onCopy={copy} onSave={saveSet} onBuy={buyRecord} />)}
+                {sets.map(s => <ResultCard key={s.idx} s={s} copied={copied} saved={savedSets} bought={boughtSets} onCopy={copy} onSave={saveSet} onBuy={buyRecord} onDiag={openDiagForSet} />)}
               </div>
               <div className="flex items-center justify-between px-1 py-2 mt-3 text-sm text-gray-500">
                 <span>총 <strong className="text-gray-800">5장</strong></span>
@@ -2254,7 +2289,7 @@ export default function GeneratePage() {
                         {myIdxs.has(s.idx) ? "👤 나" : "👥 상대"}
                       </button>
                     )}
-                    <ResultCard s={s} copied={copied} saved={savedSets} bought={boughtSets} onCopy={copy} onSave={saveSet} onBuy={buyRecord} />
+                    <ResultCard s={s} copied={copied} saved={savedSets} bought={boughtSets} onCopy={copy} onSave={saveSet} onBuy={buyRecord} onDiag={openDiagForSet} />
                   </div>
                 ))}
               </div>
