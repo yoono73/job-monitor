@@ -1106,6 +1106,7 @@ export default function GeneratePage() {
   const [diagResult,    setDiagResult]    = useState<DiagResult | null>(null);
   const [diagSource,    setDiagSource]    = useState<LottoSet | null>(null); // 어느 전략 번호인지
   const diagSectionRef = useRef<HTMLDivElement>(null);
+  const diagResultRef  = useRef<HTMLDivElement>(null);
 
   // 조건 필터 자동 생성
   const [showAutoFilter,      setShowAutoFilter]      = useState(false);
@@ -1150,10 +1151,14 @@ export default function GeneratePage() {
     setShowDiagnosis(true);
     const result = diagnosNumbers(s.numbers, draws, bayesStats, pairStats);
     setDiagResult(result);
-    // 진단 섹션으로 스크롤
+    // 진단 결과로 스크롤 (헤더가 아닌 결과 div로 직접)
     setTimeout(() => {
-      diagSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-    }, 100);
+      const el = diagResultRef.current ?? diagSectionRef.current;
+      if (el) {
+        const y = el.getBoundingClientRect().top + window.pageYOffset - 70;
+        window.scrollTo({ top: Math.max(0, y), behavior: "smooth" });
+      }
+    }, 200);
   }, [draws, bayesStats, pairStats]);
 
   const runAutoFilter = () => {
@@ -1547,7 +1552,7 @@ export default function GeneratePage() {
 
             {/* 진단 결과 */}
             {diagResult && (
-              <div className="space-y-3">
+              <div className="space-y-3" ref={diagResultRef}>
                 {/* 전략 출처 배너 */}
                 {diagSource && (
                   <div className="flex items-center gap-2 bg-indigo-50 border border-indigo-200 rounded-xl px-3 py-2">
