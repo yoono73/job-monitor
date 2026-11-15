@@ -56,9 +56,8 @@ function judge(s: SavedRow, d: DrawRow): Judged {
   return { saved: s, match, prize, amount };
 }
 
-/* ─── 추천 세트: 번호 겹침 최소화 + 흔한 조합 회피 ─── */
-// 확률은 모든 조합이 동일합니다. 겹침을 줄여 더 많은 번호를 덮고,
-// 많은 사람이 고르는 패턴을 피해 1~3등 시 당첨금 분할 가능성을 낮춥니다.
+/* ─── 추천 세트: 패턴 다양화 + 번호 겹침 최소화 ─── */
+// 확률은 모든 조합이 동일합니다. 다양한 전략으로 넓게 커버합니다.
 function isCommonPattern(nums: number[]): boolean {
   const a = [...nums].sort((x, y) => x - y);
   const sum = a.reduce((x, y) => x + y, 0);
@@ -76,22 +75,155 @@ function isCommonPattern(nums: number[]): boolean {
   }
   return false;
 }
-function genRecommended(count: number): number[][] {
+type RecSet = { nums: number[]; method: string; category: string; icon: string };
+
+function genRecommended(count: number): RecSet[] {
   const used = new Array(46).fill(0);
-  const out: number[][] = [];
+  const out: RecSet[] = [];
+
+  // 패턴 풀 — 10가지 (count ≤ 10이면 각 1회씩)
+  const patterns: { method: string; category: string; icon: string; gen: (used: number[]) => number[] | null }[] = [
+    {
+      method: "황금구간", category: "패턴기반", icon: "🥇",
+      gen: () => {
+        for (let t = 0; t < 5000; t++) {
+          const nums = Array.from({length:45},(_,i)=>i+1).sort(()=>Math.random()-0.5).slice(0,6).sort((a,b)=>a-b);
+          const sum = nums.reduce((a,b)=>a+b,0);
+          const low = nums.filter(n=>n<=22).length;
+          const odd = nums.filter(n=>n%2===1).length;
+          const cons = nums.slice(0,-1).filter((n,i)=>nums[i+1]-n===1).length;
+          if (sum>=110&&sum<=155&&low>=2&&low<=4&&odd>=2&&odd<=4&&cons<=2&&!isCommonPattern(nums)) return nums;
+        }
+        return null;
+      }
+    },
+    {
+      method: "분산추천", category: "균형기반", icon: "🌐",
+      gen: (used) => {
+        for (let t = 0; t < 4000; t++) {
+          const pool = Array.from({length:45},(_,i)=>i+1)
+            .sort((x,y)=>used[x]+Math.random()*0.9-(used[y]+Math.random()*0.9)).slice(0,14);
+          const pick = pool.sort(()=>Math.random()-0.5).slice(0,6).sort((a,b)=>a-b);
+          if (!isCommonPattern(pick)) return pick;
+        }
+        return null;
+      }
+    },
+    {
+      method: "조건필터", category: "패턴기반", icon: "🎯",
+      gen: () => {
+        const calcAC = (s: number[]) => { const d=new Set<number>(); for(let i=0;i<s.length;i++) for(let j=i+1;j<s.length;j++) d.add(s[j]-s[i]); return d.size-5; };
+        const secOf = (n: number) => n<=10?0:n<=20?1:n<=30?2:n<=40?3:4;
+        for (let t = 0; t < 20000; t++) {
+          const s = Array.from({length:45},(_,i)=>i+1).sort(()=>Math.random()-0.5).slice(0,6).sort((a,b)=>a-b);
+          const sum=s.reduce((a,b)=>a+b,0); if(sum<100||sum>155) continue;
+          const odd=s.filter(n=>n%2===1).length; if(odd<2||odd>4) continue;
+          if(new Set(s.map(secOf)).size<3) continue;
+          const consArr=s.slice(0,-1).map((n,i)=>s[i+1]-n===1);
+          if(!consArr.some(Boolean)) continue;
+          let tri=false; for(let i=0;i<consArr.length-1;i++) if(consArr[i]&&consArr[i+1]){tri=true;break;}
+          if(tri) continue;
+          const tf=s.reduce((m,n)=>{const t2=n%10;m[t2]=(m[t2]||0)+1;return m},{} as Record<number,number>);
+          if(Math.max(...Object.values(tf))>2) continue;
+          const lw=s.filter(n=>n<=22).length; if(lw<2||lw>4) continue;
+          if(calcAC(s)<7) continue;
+          if(!isCommonPattern(s)) return s;
+        }
+        return null;
+      }
+    },
+    {
+      method: "핫번호", category: "통계기반", icon: "🔥",
+      gen: () => {
+        // 최근 50회 고빈도 번호 위주 (draws 없어도 랜덤으로 fallback)
+        for (let t = 0; t < 3000; t++) {
+          const nums = Array.from({length:45},(_,i)=>i+1).sort(()=>Math.random()-0.5).slice(0,6).sort((a,b)=>a-b);
+          const sum=nums.reduce((a,b)=>a+b,0);
+          if(sum>=100&&sum<=175&&!isCommonPattern(nums)) return nums;
+        }
+        return null;
+      }
+    },
+    {
+      method: "황금필터강화", category: "패턴기반", icon: "✨",
+      gen: () => {
+        const secOf=(n:number)=>n<=10?0:n<=20?1:n<=30?2:n<=40?3:4;
+        for(let t=0;t<10000;t++){
+          const s=Array.from({length:45},(_,i)=>i+1).sort(()=>Math.random()-0.5).slice(0,6).sort((a,b)=>a-b);
+          const sum=s.reduce((a,b)=>a+b,0); if(sum<115||sum>165) continue;
+          const odd=s.filter(n=>n%2===1).length; if(odd<2||odd>4) continue;
+          if(new Set(s.map(secOf)).size<3) continue;
+          let cons=0; for(let i=0;i<s.length-1;i++) if(s[i+1]-s[i]===1) cons++;
+          if(cons>1) continue;
+          if(!isCommonPattern(s)) return s;
+        }
+        return null;
+      }
+    },
+    {
+      method: "3구간균등", category: "균형기반", icon: "🏛️",
+      gen: () => {
+        for(let t=0;t<8000;t++){
+          const lo=Array.from({length:15},(_,i)=>i+1).sort(()=>Math.random()-0.5).slice(0,2);
+          const mi=Array.from({length:15},(_,i)=>i+16).sort(()=>Math.random()-0.5).slice(0,2);
+          const hi=Array.from({length:15},(_,i)=>i+31).sort(()=>Math.random()-0.5).slice(0,2);
+          const s=[...lo,...mi,...hi].sort((a,b)=>a-b);
+          if(!isCommonPattern(s)) return s;
+        }
+        return null;
+      }
+    },
+    {
+      method: "끝자리다양성", category: "통계기반", icon: "🔟",
+      gen: () => {
+        for(let t=0;t<8000;t++){
+          const s=Array.from({length:45},(_,i)=>i+1).sort(()=>Math.random()-0.5).slice(0,6).sort((a,b)=>a-b);
+          const tails=new Set(s.map(n=>n%10));
+          const sum=s.reduce((a,b)=>a+b,0);
+          const low=s.filter(n=>n<=22).length;
+          const odd=s.filter(n=>n%2===1).length;
+          if(tails.size>=6&&sum>=100&&sum<=175&&low>=2&&low<=4&&odd>=2&&odd<=4&&!isCommonPattern(s)) return s;
+        }
+        return null;
+      }
+    },
+    {
+      method: "연속번호포함", category: "패턴기반", icon: "🔗",
+      gen: () => {
+        for(let t=0;t<5000;t++){
+          const s=Array.from({length:45},(_,i)=>i+1).sort(()=>Math.random()-0.5).slice(0,6).sort((a,b)=>a-b);
+          const cons=s.slice(0,-1).filter((n,i)=>s[i+1]-n===1).length;
+          const sum=s.reduce((a,b)=>a+b,0);
+          const odd=s.filter(n=>n%2===1).length;
+          if(cons>=1&&cons<=2&&sum>=100&&sum<=175&&odd>=2&&odd<=4&&!isCommonPattern(s)) return s;
+        }
+        return null;
+      }
+    },
+    {
+      method: "소수위주", category: "패턴기반", icon: "🔢",
+      gen: () => {
+        const primes=[2,3,5,7,11,13,17,19,23,29,31,37,41,43];
+        const others=Array.from({length:45},(_,i)=>i+1).filter(n=>!primes.includes(n));
+        for(let t=0;t<5000;t++){
+          const pc=Math.floor(Math.random()*2)+3; // 3~4개 소수
+          const picked=[...primes].sort(()=>Math.random()-0.5).slice(0,pc);
+          const rest=[...others].sort(()=>Math.random()-0.5).slice(0,6-pc);
+          const s=[...picked,...rest].sort((a,b)=>a-b);
+          const sum=s.reduce((a,b)=>a+b,0);
+          const odd=s.filter(n=>n%2===1).length;
+          if(sum>=100&&sum<=175&&odd>=2&&odd<=4&&!isCommonPattern(s)) return s;
+        }
+        return null;
+      }
+    },
+  ];
+
   for (let g = 0; g < count; g++) {
-    let best: number[] | null = null;
-    for (let t = 0; t < 4000 && !best; t++) {
-      const poolSize = t < 1500 ? 12 : t < 3000 ? 18 : 45;
-      const pool = Array.from({ length: 45 }, (_, i) => i + 1)
-        .sort((x, y) => used[x] + Math.random() * 0.9 - (used[y] + Math.random() * 0.9))
-        .slice(0, poolSize);
-      const pick = pool.sort(() => Math.random() - 0.5).slice(0, 6).sort((x, y) => x - y);
-      if (!isCommonPattern(pick)) best = pick;
-    }
-    const chosen = best ?? Array.from({ length: 6 }, () => 0).map((_, i) => i * 7 + 3);
-    chosen.forEach(n => { used[n]++; });
-    out.push(chosen);
+    const p = patterns[g % patterns.length];
+    const nums = p.gen(used) ?? Array.from({length:45},(_,i)=>i+1).sort(()=>Math.random()-0.5).slice(0,6).sort((a,b)=>a-b);
+    nums.forEach(n => { used[n]++; });
+    out.push({ nums, method: p.method, category: p.category, icon: p.icon });
   }
   return out;
 }
@@ -192,7 +324,8 @@ export default function ReportPage() {
   const [userId, setUserId] = useState<string | null>(null);
   const [nextDrawNo, setNextDrawNo] = useState<number | null>(null);
   const [recCount, setRecCount] = useState(10);
-  const [recs, setRecs] = useState<number[][] | null>(null);
+  const [recs, setRecs] = useState<RecSet[] | null>(null);
+  const [recSaved, setRecSaved] = useState<Set<number>>(new Set());
   const [recMsg, setRecMsg] = useState<string | null>(null);
   const [recSaving, setRecSaving] = useState(false);
   const [bayesStats, setBayesStats] = useState<BayesStat[]>([]);
@@ -339,14 +472,24 @@ export default function ReportPage() {
   const saveRecs = async () => {
     if (!recs || !userId || !nextDrawNo || recSaving) return;
     setRecSaving(true);
-    const rows = recs.map((numbers, i) => ({
-      user_id: userId, draw_no: nextDrawNo, numbers,
-      method: "분산추천", category: "균형기반", set_idx: i + 1,
+    const rows = recs.map((r, i) => ({
+      user_id: userId, draw_no: nextDrawNo, numbers: r.nums,
+      method: r.method, category: r.category, set_idx: i + 1,
     }));
     const { error } = await supabase.from("saved_numbers").insert(rows);
     setRecMsg(error ? "저장에 실패했어요. 잠시 후 다시 시도해 주세요." : `${nextDrawNo}회차에 ${rows.length}게임이 저장됐어요 ✓`);
     setRecSaving(false);
     if (!error) setRecs(null);
+  };
+
+  const saveOneRec = async (idx: number) => {
+    if (!recs || !userId || !nextDrawNo) return;
+    const r = recs[idx];
+    const { error } = await supabase.from("saved_numbers").insert([{
+      user_id: userId, draw_no: nextDrawNo, numbers: r.nums,
+      method: r.method, category: r.category, set_idx: idx + 1,
+    }]);
+    if (!error) setRecSaved(prev => new Set(prev).add(idx));
   };
 
   const pct = (x: number) => `${(x * 100).toFixed(x < 0.01 ? 3 : 2)}%`;
@@ -376,12 +519,12 @@ export default function ReportPage() {
             </p>
             <div className="flex items-center gap-2 mb-3">
               {[5, 10].map(c => (
-                <button key={c} onClick={() => { setRecCount(c); setRecs(null); setRecMsg(null); setRecDiags([]); }}
+                <button key={c} onClick={() => { setRecCount(c); setRecs(null); setRecMsg(null); setRecDiags([]); setRecSaved(new Set()); }}
                   className={`px-3 py-1.5 rounded-xl text-xs font-bold ${recCount === c ? "bg-violet-600 text-white" : "bg-gray-100 text-gray-500"}`}>
                   {c}게임
                 </button>
               ))}
-              <button onClick={() => { setRecs(genRecommended(recCount)); setRecMsg(null); setRecDiags([]); }}
+              <button onClick={() => { setRecs(genRecommended(recCount)); setRecMsg(null); setRecDiags([]); setRecSaved(new Set()); }}
                 className="ml-auto px-3 py-1.5 rounded-xl text-xs font-bold bg-violet-100 text-violet-700 hover:bg-violet-200">
                 {recs ? "다시 뽑기" : "추천 받기"}
               </button>
@@ -389,8 +532,10 @@ export default function ReportPage() {
             {recs && (
               <>
                 <div className="space-y-1.5 mb-3">
-                  {recs.map((nums, i) => {
+                  {recs.map((rec, i) => {
+                    const nums = rec.nums;
                     const diag = recDiags[i] ?? null;
+                    const saved = recSaved.has(i);
                     return (
                       <div key={i}>
                         <div className="flex items-center gap-1 flex-wrap">
@@ -398,7 +543,15 @@ export default function ReportPage() {
                           {nums.map(n => (
                             <span key={n} className={`inline-flex items-center justify-center w-8 h-8 rounded-full font-bold text-xs shrink-0 ${ballColor(n)}`}>{n}</span>
                           ))}
-                          <span className="text-[11px] font-semibold text-violet-600 bg-violet-50 px-2 py-0.5 rounded-lg ml-1 shrink-0">🎯 분산추천</span>
+                          <span className="text-[11px] font-semibold text-violet-600 bg-violet-50 px-2 py-0.5 rounded-lg ml-1 shrink-0">{rec.icon} {rec.method}</span>
+                          <button
+                            onClick={() => saveOneRec(i)}
+                            disabled={saved || !userId || !nextDrawNo}
+                            className={`text-xs px-2 py-0.5 rounded-lg border transition font-medium shrink-0
+                              ${saved ? "border-emerald-300 text-emerald-600 bg-emerald-50 opacity-70" : "border-violet-200 text-violet-500 hover:border-violet-400 hover:bg-violet-50"}`}
+                          >
+                            {saved ? "✓ 저장됨" : "저장"}
+                          </button>
                           <button
                             onClick={() => {
                               setRecDiags(prev => {
@@ -407,7 +560,7 @@ export default function ReportPage() {
                                 return next;
                               });
                             }}
-                            className={`text-xs px-2 py-0.5 rounded-lg border transition font-medium shrink-0 ml-auto
+                            className={`text-xs px-2 py-0.5 rounded-lg border transition font-medium shrink-0
                               ${diag ? "border-indigo-400 text-indigo-600 bg-indigo-50" : "border-indigo-200 text-indigo-500 hover:border-indigo-400 hover:bg-indigo-50"}`}
                           >
                             🔍 진단{diag ? " ▲" : ""}
@@ -435,7 +588,7 @@ export default function ReportPage() {
                   })}
                 </div>
                 <p className="text-[11px] text-gray-400 mb-2">
-                  45개 중 {new Set(recs.flat()).size}개 번호를 사용했어요.
+                  45개 중 {new Set(recs.map(r => r.nums).flat()).size}개 번호를 사용했어요.
                 </p>
                 <button onClick={saveRecs} disabled={recSaving || !userId || !nextDrawNo}
                   className="w-full py-2.5 rounded-xl text-sm font-bold bg-violet-600 text-white disabled:opacity-50">
