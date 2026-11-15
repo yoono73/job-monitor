@@ -314,7 +314,7 @@ export default function StatsPage() {
     }
   };
 
-  /* 전략별 성과 집계 */
+  /* 전략별 성과 집계 (prize_rank 기반) */
   const strategyStats = useMemo(() => {
     const map: Record<string, { total: number; hits: number; amount: number; best: number | null }> = {};
     history.forEach(h => {
@@ -329,6 +329,43 @@ export default function StatsPage() {
       }
     });
     return Object.entries(map).sort((a, b) => b[1].hits - a[1].hits);
+  }, [history]);
+
+  /* 전략별 적중 개수 분석 (matched_count 자동 집계) */
+  const matchStats = useMemo(() => {
+    const map: Record<string, { total: number; totalMatch: number; best: number; cnt3plus: number; cnt4plus: number }> = {};
+    history.forEach(h => {
+      if (!map[h.strategy]) map[h.strategy] = { total: 0, totalMatch: 0, best: 0, cnt3plus: 0, cnt4plus: 0 };
+      map[h.strategy].total++;
+      if (h.matched_count !== null) {
+        map[h.strategy].totalMatch += h.matched_count;
+        if (h.matched_count > map[h.strategy].best) map[h.strategy].best = h.matched_count;
+        if (h.matched_count >= 3) map[h.strategy].cnt3plus++;
+        if (h.matched_count >= 4) map[h.strategy].cnt4plus++;
+      }
+    });
+    return Object.entries(map)
+      .map(([strategy, s]) => ({
+        strategy,
+        total: s.total,
+        avgMatch: s.total > 0 ? s.totalMatch / s.total : 0,
+        best: s.best,
+        cnt3plus: s.cnt3plus,
+        cnt4plus: s.cnt4plus,
+      }))
+      .sort((a, b) => b.avgMatch - a.avgMatch);
+  }, [history]);
+
+  /* 전체 성적 요약 */
+  const overallStats = useMemo(() => {
+    const checked = history.filter(h => h.matched_count !== null);
+    if (checked.length === 0) return null;
+    const totalMatch = checked.reduce((a, h) => a + (h.matched_count ?? 0), 0);
+    const best = Math.max(...checked.map(h => h.matched_count ?? 0));
+    const dist = [0, 0, 0, 0, 0, 0, 0];
+    checked.forEach(h => { if (h.matched_count !== null) dist[Math.min(h.matched_count, 6)]++; });
+    const bestEntry = checked.reduce((a, h) => ((h.matched_count ?? 0) > (a.matched_count ?? 0) ? h : a), checked[0]);
+    return { total: checked.length, totalMatch, avgMatch: totalMatch / checked.length, best, dist, bestEntry };
   }, [history]);
 
   useEffect(() => {
@@ -784,65 +821,114 @@ export default function StatsPage() {
   return (
     <div className="px-4 py-5 md:px-6 lg:px-8 max-w-3xl mx-auto">
 
-      {/* ── 🎫 추천 이력 & 전략 성과 ── */}
-      <div className="bg-white border border-orange-200 rounded-2xl p-4 mb-5 shadow-sm">
-        <h3 className="text-sm font-extrabold text-orange-700 mb-3">🎫 내 추천 이력 &amp; 전략 성과</h3>
+      {/* ── 🏆 나의 번호 성적 분석 ── */}
+      <div className="bg-gradient-to-br from-orange-50 to-amber-50 border border-orange-200 rounded-2xl p-4 mb-5 shadow-sm">
+        <h3 className="text-sm font-extrabold text-orange-700 mb-3 flex items-center gap-1.5">
+          🏆 나의 번호 성적 분석
+          {overallStats && overallStats.best >= 4 && (
+            <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-yellow-400 text-yellow-900 animate-pulse">
+              🎉 {overallStats.best}개 적중!
+            </span>
+          )}
+        </h3>
 
-        {/* 수동 이력 추가 */}
-        <div className="flex gap-2 mb-3 flex-wrap">
-          <input
-            type="number" placeholder="회차" value={historyInput.draw_no}
-            onChange={e => setHistoryInput(p => ({ ...p, draw_no: e.target.value }))}
-            className="w-20 text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-orange-300"
-          />
-          <input
-            type="text" placeholder="전략명" value={historyInput.strategy}
-            onChange={e => setHistoryInput(p => ({ ...p, strategy: e.target.value }))}
-            className="flex-1 min-w-24 text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-orange-300"
-          />
-          <select
-            value={historyInput.prize_rank}
-            onChange={e => setHistoryInput(p => ({ ...p, prize_rank: e.target.value }))}
-            className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-orange-300"
-          >
-            <option value="">미당첨</option>
-            <option value="5">5등(3개)</option>
-            <option value="4">4등(4개)</option>
-            <option value="3">3등(5개)</option>
-            <option value="2">2등(5+보너스)</option>
-            <option value="1">1등(6개)</option>
-          </select>
-          <button onClick={addHistoryManual}
-            className="text-xs font-bold px-3 py-1.5 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition">
-            추가
-          </button>
-        </div>
-        {historyMsg && <p className="text-xs text-emerald-600 font-semibold mb-2">{historyMsg}</p>}
+        {/* 전체 요약 */}
+        {overallStats && (
+          <div className="grid grid-cols-3 gap-2 mb-4">
+            <div className="bg-white rounded-xl p-3 text-center shadow-sm border border-orange-100">
+              <p className="text-[10px] text-gray-400 mb-0.5">총 추천</p>
+              <p className="text-xl font-extrabold text-gray-800">{overallStats.total}<span className="text-xs font-normal text-gray-400">건</span></p>
+            </div>
+            <div className="bg-white rounded-xl p-3 text-center shadow-sm border border-orange-100">
+              <p className="text-[10px] text-gray-400 mb-0.5">평균 적중</p>
+              <p className="text-xl font-extrabold text-orange-600">{overallStats.avgMatch.toFixed(1)}<span className="text-xs font-normal text-gray-400">개</span></p>
+            </div>
+            <div className={`rounded-xl p-3 text-center shadow-sm border ${
+              overallStats.best >= 4 ? "bg-yellow-50 border-yellow-300" :
+              overallStats.best >= 3 ? "bg-emerald-50 border-emerald-200" : "bg-white border-orange-100"
+            }`}>
+              <p className="text-[10px] text-gray-400 mb-0.5">최고 적중</p>
+              <p className={`text-xl font-extrabold ${overallStats.best >= 4 ? "text-yellow-600" : overallStats.best >= 3 ? "text-emerald-600" : "text-gray-800"}`}>
+                {overallStats.best}<span className="text-xs font-normal text-gray-400">개</span>
+              </p>
+            </div>
+          </div>
+        )}
 
-        {/* 전략별 통계 */}
-        {strategyStats.length > 0 && (
-          <div className="mb-3">
-            <p className="text-xs font-bold text-gray-500 mb-1.5">전략별 성과</p>
-            <div className="grid grid-cols-1 gap-1.5">
-              {strategyStats.map(([strategy, stat]) => (
-                <div key={strategy} className="flex items-center justify-between bg-gray-50 rounded-xl px-3 py-2">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className="text-xs font-bold text-gray-700 truncate">{strategy}</span>
-                    <span className="text-xs text-gray-400">{stat.total}회</span>
+        {/* 최고 성적 하이라이트 */}
+        {overallStats && overallStats.bestEntry && overallStats.best >= 3 && (
+          <div className={`rounded-xl p-3 mb-4 border-2 ${
+            overallStats.best >= 4 ? "bg-yellow-50 border-yellow-400" : "bg-emerald-50 border-emerald-300"
+          }`}>
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-base">{overallStats.best >= 4 ? "🥇" : "🥈"}</span>
+              <span className={`text-xs font-extrabold ${overallStats.best >= 4 ? "text-yellow-700" : "text-emerald-700"}`}>
+                최고 성적 — {overallStats.bestEntry.draw_no}회 · {overallStats.bestEntry.strategy}
+              </span>
+              <span className={`ml-auto text-[11px] font-bold px-2 py-0.5 rounded-full ${
+                overallStats.best >= 4 ? "bg-yellow-200 text-yellow-800" : "bg-emerald-200 text-emerald-800"
+              }`}>
+                {overallStats.best >= 4 ? `${overallStats.best}등` : "5등"} 🎊
+              </span>
+            </div>
+            <div className="flex gap-1.5 flex-wrap">
+              {overallStats.bestEntry.numbers?.map((n: number, i: number) => <Ball key={i} n={n} size="sm" />)}
+            </div>
+          </div>
+        )}
+
+        {/* 적중 개수 분포 */}
+        {overallStats && (
+          <div className="mb-4">
+            <p className="text-xs font-bold text-gray-500 mb-2">적중 개수 분포</p>
+            <div className="flex items-end gap-1 h-16">
+              {[0,1,2,3,4,5,6].map(cnt => {
+                const count = overallStats.dist[cnt] ?? 0;
+                const maxCnt = Math.max(...overallStats.dist, 1);
+                const heightPct = Math.round((count / maxCnt) * 100);
+                return (
+                  <div key={cnt} className="flex-1 flex flex-col items-center gap-0.5">
+                    <span className="text-[9px] text-gray-400 font-bold">{count > 0 ? count : ""}</span>
+                    <div className="w-full flex items-end" style={{ height: "44px" }}>
+                      <div
+                        className={`w-full rounded-t transition-all duration-700 ${
+                          cnt >= 4 ? "bg-yellow-400" : cnt === 3 ? "bg-emerald-400" : cnt >= 1 ? "bg-orange-200" : "bg-gray-200"
+                        }`}
+                        style={{ height: `${Math.max(heightPct, count > 0 ? 10 : 0)}%` }}
+                      />
+                    </div>
+                    <span className="text-[9px] font-semibold text-gray-500">{cnt}개</span>
                   </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    {stat.best !== null && (
-                      <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded-full border ${RANK_LABELS[stat.best]?.color ?? "text-gray-600 bg-gray-50 border-gray-300"}`}>
-                        최고 {RANK_LABELS[stat.best]?.label}
-                      </span>
-                    )}
-                    <span className="text-xs font-semibold text-orange-600">
-                      {stat.hits}/{stat.total} 당첨
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* 전략별 평균 적중 (matched_count 기반) */}
+        {matchStats.length > 0 && (
+          <div className="mb-4">
+            <p className="text-xs font-bold text-gray-500 mb-2">전략별 평균 적중 개수</p>
+            <div className="space-y-1.5">
+              {matchStats.slice(0, 8).map(s => (
+                <div key={s.strategy} className="flex items-center gap-2">
+                  <span className="text-[11px] font-semibold text-gray-600 w-20 shrink-0 truncate">{s.strategy}</span>
+                  <div className="flex-1 h-4 bg-gray-100 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all duration-500 ${
+                        s.avgMatch >= 2.5 ? "bg-gradient-to-r from-yellow-400 to-orange-400" :
+                        s.avgMatch >= 1.5 ? "bg-gradient-to-r from-orange-300 to-amber-400" :
+                        "bg-gradient-to-r from-gray-300 to-gray-400"
+                      }`}
+                      style={{ width: `${Math.min(s.avgMatch / 3 * 100, 100)}%` }}
+                    />
+                  </div>
+                  <div className="text-right w-24 shrink-0 flex items-center gap-1 justify-end">
+                    <span className={`text-[11px] font-bold ${s.avgMatch >= 2 ? "text-orange-600" : "text-gray-500"}`}>
+                      평균 {s.avgMatch.toFixed(1)}개
                     </span>
-                    {stat.amount > 0 && (
-                      <span className="text-xs text-emerald-600 font-bold">
-                        +{stat.amount.toLocaleString()}원
-                      </span>
+                    {s.best >= 4 && (
+                      <span className="text-[9px] font-bold px-1 py-0.5 rounded bg-yellow-100 text-yellow-700">최고{s.best}</span>
                     )}
                   </div>
                 </div>
@@ -851,21 +937,50 @@ export default function StatsPage() {
           </div>
         )}
 
-        {/* 이력 목록 */}
+        {/* 이력 목록 (matched_count 표시 강화) */}
         {history.length > 0 ? (
           <div className="space-y-1.5">
-            <p className="text-xs font-bold text-gray-500 mb-1">최근 이력</p>
+            <div className="flex items-center justify-between mb-1">
+              <p className="text-xs font-bold text-gray-500">최근 추천 이력</p>
+              <div className="flex gap-1 items-center">
+                {historyMsg && <p className="text-[11px] text-emerald-600 font-semibold">{historyMsg}</p>}
+              </div>
+            </div>
             {history.slice(0, 20).map(h => (
               <div key={h.id} className={`flex items-center justify-between rounded-xl px-3 py-2 border
-                ${h.prize_rank ? "bg-orange-50 border-orange-200" : "bg-gray-50 border-gray-100"}`}>
+                ${h.matched_count !== null && h.matched_count >= 4 ? "bg-yellow-50 border-yellow-300" :
+                  h.matched_count !== null && h.matched_count >= 3 ? "bg-emerald-50 border-emerald-200" :
+                  h.prize_rank ? "bg-orange-50 border-orange-200" : "bg-white border-gray-100"}`}>
                 <div className="flex items-center gap-2 min-w-0">
                   <span className="text-xs font-bold text-gray-500 shrink-0">{h.draw_no}회</span>
                   <span className="text-xs font-semibold text-gray-700 truncate">{h.strategy}</span>
-                  {h.note && h.note !== "수동 입력" && (
-                    <span className="text-[10px] text-gray-400 truncate hidden sm:block">{h.note}</span>
+                  {h.numbers && h.numbers.length > 0 && (
+                    <div className="hidden sm:flex gap-0.5">
+                      {h.numbers.map((n: number, i: number) => <Ball key={i} n={n} size="sm" />)}
+                    </div>
                   )}
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
+                  {h.matched_count !== null ? (
+                    <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded-full ${
+                      h.matched_count >= 4 ? "bg-yellow-200 text-yellow-800" :
+                      h.matched_count >= 3 ? "bg-emerald-200 text-emerald-800" :
+                      h.matched_count >= 1 ? "bg-orange-100 text-orange-700" :
+                      "bg-gray-100 text-gray-400"
+                    }`}>
+                      {h.matched_count}개 적중
+                    </span>
+                  ) : (
+                    <>
+                      {h.prize_rank !== null ? (
+                        <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded-full border ${RANK_LABELS[h.prize_rank]?.color ?? ""}`}>
+                          {RANK_LABELS[h.prize_rank]?.label}
+                        </span>
+                      ) : (
+                        <span className="text-[11px] text-gray-300">대기중</span>
+                      )}
+                    </>
+                  )}
                   {editingId === h.id ? (
                     <div className="flex gap-1">
                       {[5,4,3,2,1].map(r => (
@@ -875,30 +990,12 @@ export default function StatsPage() {
                         </button>
                       ))}
                       <button onClick={() => saveHistoryResult(h.id, null)}
-                        className="text-[10px] px-1.5 py-0.5 rounded-lg border border-gray-300 hover:bg-gray-200 transition">
-                        꽝
-                      </button>
+                        className="text-[10px] px-1.5 py-0.5 rounded-lg border border-gray-300 hover:bg-gray-200 transition">꽝</button>
                       <button onClick={() => setEditingId(null)} className="text-[10px] text-gray-400 ml-0.5">✕</button>
                     </div>
                   ) : (
-                    <>
-                      {h.prize_rank !== null ? (
-                        <>
-                          <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded-full border ${RANK_LABELS[h.prize_rank]?.color ?? ""}`}>
-                            {RANK_LABELS[h.prize_rank]?.label}
-                          </span>
-                          {h.prize_amount > 0 && (
-                            <span className="text-[11px] text-emerald-600 font-bold">+{h.prize_amount.toLocaleString()}</span>
-                          )}
-                        </>
-                      ) : (
-                        <span className="text-[11px] text-gray-400">미입력</span>
-                      )}
-                      <button onClick={() => setEditingId(h.id)}
-                        className="text-[10px] text-gray-400 hover:text-orange-500 transition ml-0.5">
-                        ✏️
-                      </button>
-                    </>
+                    <button onClick={() => setEditingId(h.id)}
+                      className="text-[10px] text-gray-300 hover:text-orange-500 transition">✏️</button>
                   )}
                 </div>
               </div>
@@ -906,9 +1003,42 @@ export default function StatsPage() {
           </div>
         ) : (
           <p className="text-xs text-gray-400 text-center py-3">
-            아직 기록이 없어요 — 번호 생성 후 🎫 구매 버튼을 눌러보세요
+            아직 기록이 없어요 — 번호 생성 후 💾 저장 버튼을 눌러보세요
           </p>
         )}
+
+        {/* 수동 이력 추가 */}
+        <div className="mt-3 pt-3 border-t border-orange-100">
+          <p className="text-[10px] text-gray-400 mb-2">수동 이력 추가</p>
+          <div className="flex gap-2 flex-wrap">
+            <input
+              type="number" placeholder="회차" value={historyInput.draw_no}
+              onChange={e => setHistoryInput(p => ({ ...p, draw_no: e.target.value }))}
+              className="w-20 text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-orange-300"
+            />
+            <input
+              type="text" placeholder="전략명" value={historyInput.strategy}
+              onChange={e => setHistoryInput(p => ({ ...p, strategy: e.target.value }))}
+              className="flex-1 min-w-24 text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-orange-300"
+            />
+            <select
+              value={historyInput.prize_rank}
+              onChange={e => setHistoryInput(p => ({ ...p, prize_rank: e.target.value }))}
+              className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-orange-300"
+            >
+              <option value="">미당첨</option>
+              <option value="5">5등(3개)</option>
+              <option value="4">4등(4개)</option>
+              <option value="3">3등(5개)</option>
+              <option value="2">2등(5+보너스)</option>
+              <option value="1">1등(6개)</option>
+            </select>
+            <button onClick={addHistoryManual}
+              className="text-xs font-bold px-3 py-1.5 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition">
+              추가
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* ── 베이지안 헤더 ── */}
