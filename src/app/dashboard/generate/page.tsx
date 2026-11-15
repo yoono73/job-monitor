@@ -830,8 +830,9 @@ const CATEGORY_GROUPS = [
 ];
 
 const DEFAULT_KEYS: MethodKey[] = [
-  "fav", "bayes", "bayes_overdue", "hot", "pattern", "balance", "cold",
-  "pairs", "norepeat", "prime", "section",
+  "fav", "bayes", "bayes_overdue", "golden_zone", "golden_combo",
+  "spread", "pairs", "zone_balance", "triple_common", "tail_diversity",
+  "pattern", "balance",
 ];
 
 function runGenerator(key: MethodKey, draws: DrawRow[], bayesStats?: BayesStat[], favorites?: number[], usedNumbers?: Set<number>): Six {
