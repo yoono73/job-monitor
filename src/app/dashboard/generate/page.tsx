@@ -1050,29 +1050,29 @@ function diagnosNumbers(nums: number[], draws: DrawRow[], bayesStats: BayesStat[
     return diffs.size - 5;
   };
 
-  // 1. 합계 황금구간 115~140 (15점) — 더 엄격한 핵심 구간
+  // 1. 합계 적정구간 (15점) — 실제 1등 기준 10~90퍼센타일: 98~177, 중앙값 137
   const sum = sorted.reduce((s, n) => s + n, 0);
-  const sumPass = sum >= 115 && sum <= 140;
-  criteria.push({ label: "합계 핵심구간 (115~140)", pass: sumPass, detail: `합계 ${sum}`, points: 15 });
+  const sumPass = sum >= 100 && sum <= 175;
+  criteria.push({ label: "합계 적정구간 (100~175)", pass: sumPass, detail: `합계 ${sum}`, points: 15 });
 
-  // 2. 홀수 정확히 3개 (15점) — 완벽한 3:3 균형
+  // 2. 홀짝 균형 (15점) — 실제 1등 홀수 2~4개가 85%
   const oddCnt = sorted.filter(n => n % 2 === 1).length;
-  const oePass = oddCnt === 3;
-  criteria.push({ label: "홀짝 완벽 균형 (홀수 3개)", pass: oePass, detail: `홀수 ${oddCnt}개`, points: 15 });
+  const oePass = oddCnt >= 2 && oddCnt <= 4;
+  criteria.push({ label: "홀짝 균형 (홀수 2~4개)", pass: oePass, detail: `홀수 ${oddCnt}개`, points: 15 });
 
   // 3. 3구간 완전 커버 (15점) - 구간: 1-15, 16-30, 31-45
   const secs = new Set(sorted.map(n => n <= 15 ? 1 : n <= 30 ? 2 : 3));
   const secPass = secs.size === 3;
   criteria.push({ label: "3구간 완전 커버 (1~15·16~30·31~45)", pass: secPass, detail: `${secs.size}구간`, points: 15 });
 
-  // 4. 베이지안 상위 (평균 순위 < 23) (15점)
+  // 4. 베이지안 상위 (15점) — 실제 1등 기준 완화: 평균 30위↑
   let bayesScore = 0;
   if (bayesStats.length > 0) {
     const ranks = sorted.map(n => { const s = bayesStats.find(b => b.number === n); return s ? s.bayesian_rank : 45; });
     const avgRank = ranks.reduce((s, r) => s + r, 0) / ranks.length;
     bayesScore = avgRank;
-    const bayesPass = avgRank < 18;
-    criteria.push({ label: "베이지안 상위 (평균 순위 18위↑)", pass: bayesPass, detail: `평균 ${avgRank.toFixed(1)}위`, points: 15 });
+    const bayesPass = avgRank < 30;
+    criteria.push({ label: "베이지안 상위 (평균 순위 30위↑)", pass: bayesPass, detail: `평균 ${avgRank.toFixed(1)}위`, points: 15 });
   } else {
     criteria.push({ label: "베이지안 상위", pass: false, detail: "데이터 로딩 중", points: 15 });
   }

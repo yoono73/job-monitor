@@ -116,22 +116,22 @@ function diagnosNumbers(nums: number[], draws: DrawRow[], bayesStats: BayesStat[
     return diffs.size - 5;
   };
 
-  // 1. 합계 황금구간 (15점)
+  // 1. 합계 황금구간 (15점) — 실제 1등 기준 10~90퍼센타일: 98~177, 중앙값 137
   const sum = sorted.reduce((s, n) => s + n, 0);
-  criteria.push({ label: "합계 핵심구간 (115~140)", pass: sum >= 115 && sum <= 140, detail: `합계 ${sum}`, points: 15 });
+  criteria.push({ label: "합계 적정구간 (100~175)", pass: sum >= 100 && sum <= 175, detail: `합계 ${sum}`, points: 15 });
 
-  // 2. 홀짝 균형 (15점)
+  // 2. 홀짝 균형 (15점) — 실제 1등 홀수=3이 35%, 2~4개가 85%
   const oddCnt = sorted.filter(n => n % 2 === 1).length;
-  criteria.push({ label: "홀짝 완벽 균형 (홀수 3개)", pass: oddCnt === 3, detail: `홀수 ${oddCnt}개`, points: 15 });
+  criteria.push({ label: "홀짝 균형 (홀수 2~4개)", pass: oddCnt >= 2 && oddCnt <= 4, detail: `홀수 ${oddCnt}개`, points: 15 });
 
   // 3. 3구간 커버 (15점)
   const secs = new Set(sorted.map(n => n <= 15 ? 1 : n <= 30 ? 2 : 3));
   criteria.push({ label: "3구간 완전 커버 (1~15·16~30·31~45)", pass: secs.size === 3, detail: `${secs.size}구간`, points: 15 });
 
-  // 4. 베이지안 상위 (15점)
+  // 4. 베이지안 상위 (15점) — 실제 1등 기준 완화: 평균 30위↑
   if (bayesStats.length > 0) {
     const avgRank = sorted.map(n => { const b = bayesStats.find(x => x.number === n); return b ? b.bayesian_rank : 45; }).reduce((s, r) => s + r, 0) / sorted.length;
-    criteria.push({ label: "베이지안 상위 (평균 순위 18위↑)", pass: avgRank < 18, detail: `평균 ${avgRank.toFixed(1)}위`, points: 15 });
+    criteria.push({ label: "베이지안 상위 (평균 순위 30위↑)", pass: avgRank < 30, detail: `평균 ${avgRank.toFixed(1)}위`, points: 15 });
   } else {
     criteria.push({ label: "베이지안 상위", pass: false, detail: "데이터 로딩 중", points: 15 });
   }
