@@ -1648,9 +1648,7 @@ export default function GeneratePage() {
                       const base = diagSource ?? { idx: 1, icon: "🔍", method: "번호진단", category: "직접픽" as const, desc: `진단점수 ${diagResult.score}점`, numbers: nums };
                       setSets([{ ...base, idx: 1, numbers: nums, desc: diagSource ? `${diagSource.desc} (진단${diagResult.score}점)` : `진단점수 ${diagResult.score}점` }]);
                       setSavedSets(new Set());
-                      setShowDiagnosis(false);
                       setDiagSource(null);
-                      window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
                     }}
                     className="w-full py-2.5 rounded-xl bg-indigo-600 text-white font-bold text-sm hover:bg-indigo-700 transition shadow-md"
                   >
@@ -1793,7 +1791,6 @@ export default function GeneratePage() {
                           onClick={() => {
                             setSets([{ idx: 1, icon: "🎯", method: "조건필터", category: "패턴기반", desc: "8조건 통과", numbers: s.numbers }]);
                             setSavedSets(new Set());
-                            window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
                           }}
                           className="flex-1 py-1.5 text-xs font-semibold rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition"
                         >
@@ -1826,7 +1823,6 @@ export default function GeneratePage() {
                                 onClick={() => {
                                   setSets([{ idx: 1, icon: "🎯", method: "조건필터", category: "패턴기반", desc: `8조건+진단 ${dr.score}점`, numbers: s.numbers }]);
                                   setSavedSets(new Set());
-                                  window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
                                 }}
                                 className="mt-2 w-full py-1.5 text-xs font-semibold rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition"
                               >
