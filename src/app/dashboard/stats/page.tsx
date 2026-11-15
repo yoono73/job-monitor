@@ -265,6 +265,7 @@ export default function StatsPage() {
     created_at: string;
   }
   const [history, setHistory] = useState<RecommendHistory[]>([]);
+  const [allWins, setAllWins] = useState<RecommendHistory[]>([]);
   const [historyInput, setHistoryInput] = useState<{ draw_no: string; strategy: string; prize_rank: string }>({ draw_no: "", strategy: "", prize_rank: "" });
   const [historyMsg, setHistoryMsg] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -280,6 +281,12 @@ export default function StatsPage() {
   useEffect(() => {
     supabase.from("recommendation_history").select("*").order("draw_no", { ascending: false }).limit(50)
       .then(({ data }) => { if (data) setHistory(data as RecommendHistory[]); });
+    // 당첨 이력 전체 조회 (3개 이상 일치 또는 등수 기록된 항목, 제한 없음)
+    supabase.from("recommendation_history").select("*")
+      .or("matched_count.gte.3,prize_rank.not.is.null")
+      .order("draw_no", { ascending: false })
+      .order("id", { ascending: true })
+      .then(({ data }) => { if (data) setAllWins(data as RecommendHistory[]); });
   }, [supabase]);
 
   const saveHistoryResult = async (id: number, rank: number | null) => {
@@ -787,9 +794,7 @@ export default function StatsPage() {
 
       {/* ── 🏆 패턴별 당첨 이력 ── */}
       {(() => {
-        const wins = [...history]
-          .filter(h => (h.matched_count !== null && h.matched_count >= 3) || h.prize_rank !== null)
-          .sort((a, b) => b.draw_no - a.draw_no || a.id - b.id);
+        const wins = [...allWins].sort((a, b) => b.draw_no - a.draw_no || a.id - b.id);
         const total = wins.length;
 
         const rankBadge = (rank: number | null, matched: number | null) => {

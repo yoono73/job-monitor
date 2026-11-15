@@ -2037,7 +2037,7 @@ export default function GeneratePage() {
             </div>
             {/* 대량 선택 */}
             <p className="text-[10px] text-gray-400 font-semibold mb-1.5">대량 구매 패키지</p>
-            <div className="grid grid-cols-4 gap-2">
+            <div className="grid grid-cols-5 gap-1.5">
               {[
                 { n: 10, price: "1만원", color: "slate" },
                 { n: 20, price: "2만원", color: "teal" },
@@ -2055,9 +2055,9 @@ export default function GeneratePage() {
                 }[color];
                 return (
                   <button key={n} onClick={() => updateSetCount(n)}
-                    className={`py-2.5 rounded-xl border font-bold transition-all text-center ${cls}`}>
-                    <div className="text-base leading-tight">{n}세트</div>
-                    <div className={`text-[10px] font-semibold ${active ? "text-white/80" : "opacity-60"}`}>{price}</div>
+                    className={`py-2 rounded-xl border font-bold transition-all text-center ${cls}`}>
+                    <div className="text-sm leading-tight">{n}세트</div>
+                    <div className={`text-[9px] font-semibold ${active ? "text-white/80" : "opacity-60"}`}>{price}</div>
                   </button>
                 );
               })}
