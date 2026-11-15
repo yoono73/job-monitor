@@ -755,6 +755,7 @@ function genSpread(usedNumbers: Set<number>): Six {
   };
 
   // 복합 품질 조건: isBalanced + 끝자리 다양성(≥4종) + AC값≥6 + 합계110~155
+  // + 끝자리9 저출현 편향 반영 (1~1250회 분析: 끝자리9 평균보다 118회 ↓)
   for (let t = 0; t < 10000; t++) {
     const nums = [...pool].sort(() => Math.random() - 0.5).slice(0, 6).sort((a, b) => a - b) as Six;
     if (!isBalanced(nums)) continue;
@@ -763,6 +764,9 @@ function genSpread(usedNumbers: Set<number>): Six {
     const tails = new Set(nums.map(n => n % 10));
     if (tails.size < 4) continue;
     if (calcAC(nums) < 6) continue;
+    // 끝자리9 번호(9,19,29,39) 최대 1개 (저출현 편향 반영)
+    const tail9count = nums.filter(n => n % 10 === 9).length;
+    if (tail9count > 1) continue;
     return nums;
   }
   // 1차 완화: isBalanced + 합계
