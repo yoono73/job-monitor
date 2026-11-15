@@ -289,6 +289,16 @@ export default function StatsPage() {
       .then(({ data }) => { if (data) setAllWins(data as RecommendHistory[]); });
   }, [supabase]);
 
+  const deleteHistory = async (id: number) => {
+    const { error } = await supabase.from("recommendation_history").delete().eq("id", id);
+    if (!error) {
+      setHistory(prev => prev.filter(h => h.id !== id));
+      setAllWins(prev => prev.filter(h => h.id !== id));
+      setHistoryMsg("삭제됐어요 ✓");
+      setTimeout(() => setHistoryMsg(null), 2000);
+    }
+  };
+
   const saveHistoryResult = async (id: number, rank: number | null) => {
     const amount = rank ? [0, 0, 0, 0, 50000, 5000][rank] ?? 0 : 0;
     const matched = rank ? [0, 6, 5, 5, 4, 3][rank] ?? 0 : 0;
@@ -821,6 +831,17 @@ export default function StatsPage() {
 
         if (total === 0) return null;
 
+        // 전략별 누적 순번 계산 (오래된 것부터 1회, 2회, 3회...)
+        // 같은 회차 내에서는 id DESC → 화면에서 위(id 작은 것)가 높은 누적 횟수를 받도록
+        const winsAsc = [...wins].sort((a, b) => a.draw_no - b.draw_no || b.id - a.id);
+        const stratCountMap: Record<string, number> = {};
+        const stratCumByIdMap: Record<number, number> = {};
+        winsAsc.forEach(w => {
+          const key = stratLabel(w.strategy);
+          stratCountMap[key] = (stratCountMap[key] || 0) + 1;
+          stratCumByIdMap[w.id] = stratCountMap[key];
+        });
+
         return (
           <div className="bg-white border border-gray-200 rounded-2xl p-4 mb-5 shadow-sm">
             <h3 className="text-sm font-extrabold text-gray-800 mb-1 flex items-center gap-1.5">
@@ -831,23 +852,22 @@ export default function StatsPage() {
             <p className="text-[10px] text-gray-400 mb-3">어떤 전략이 적중했는지 확인하고 패턴 선택에 참고하세요</p>
 
             {/* 헤더 행 */}
-            <div className="grid grid-cols-[42px_36px_1fr_52px_24px] gap-x-1.5 mb-1 px-1.5">
+            <div className="grid grid-cols-[40px_32px_1fr] gap-x-1.5 mb-1 px-1.5">
               <span className="text-[10px] font-bold text-gray-400">회차</span>
               <span className="text-[10px] font-bold text-gray-400">등수</span>
-              <span className="text-[10px] font-bold text-gray-400">번호</span>
-              <span className="text-[10px] font-bold text-gray-400">패턴</span>
-              <span className="text-[10px] font-bold text-gray-400 text-right">#</span>
+              <span className="text-[10px] font-bold text-gray-400">번호 · 패턴 · 누적</span>
             </div>
 
             <div className="space-y-1.5">
-              {wins.map((w, idx) => {
+              {wins.map((w) => {
                 const nums6 = Array.isArray(w.numbers) ? (w.numbers as number[]) : [];
                 const hasNums = nums6.length === 6 && nums6.some(n => n > 0);
                 const { text: rankText, cls: rankCls } = rankBadge(w.prize_rank, w.matched_count);
-                const cumCount = total - idx;
+                const label = stratLabel(w.strategy);
+                const stratCumCount = stratCumByIdMap[w.id] ?? 1;
 
                 return (
-                  <div key={w.id} className="grid grid-cols-[42px_36px_1fr_52px_24px] gap-x-1.5 items-center bg-gray-50 rounded-xl px-1.5 py-2 border border-gray-100">
+                  <div key={w.id} className="grid grid-cols-[40px_32px_1fr] gap-x-1.5 items-center bg-gray-50 rounded-xl px-1.5 py-2 border border-gray-100">
                     {/* 회차 */}
                     <span className="text-[11px] font-bold text-gray-700 leading-none">{w.draw_no}회</span>
 
@@ -856,21 +876,24 @@ export default function StatsPage() {
                       {rankText}
                     </span>
 
-                    {/* 번호 */}
-                    <div className="flex gap-0.5 flex-wrap">
+                    {/* 번호 · 패턴 · 누적 · 삭제 — 한 줄 */}
+                    <div className="flex items-center gap-1.5 flex-wrap">
                       {hasNums
                         ? nums6.map((n, i) => <Ball key={i} n={n} size="sm" />)
-                        : <span className="text-[10px] text-gray-400 italic self-center">미기록</span>
+                        : <span className="text-[10px] text-gray-400 italic">미기록</span>
                       }
+                      <span className="text-[10px] font-semibold text-indigo-700 bg-indigo-50 rounded px-1.5 py-0.5 leading-none shrink-0">
+                        {label}
+                      </span>
+                      <span className="text-[11px] font-extrabold text-amber-600 leading-none shrink-0">
+                        누적<span className="text-[13px] ml-0.5">{stratCumCount}</span>회
+                      </span>
+                      <button
+                        onClick={() => { if (confirm(`${w.draw_no}회 ${label} 기록을 삭제할까요?`)) deleteHistory(w.id); }}
+                        className="text-[10px] text-gray-300 hover:text-red-500 transition-colors leading-none shrink-0 ml-auto"
+                        title="삭제"
+                      >✕</button>
                     </div>
-
-                    {/* 패턴 */}
-                    <span className="text-[10px] font-semibold text-indigo-700 bg-indigo-50 rounded px-1 py-0.5 text-center truncate leading-none">
-                      {stratLabel(w.strategy)}
-                    </span>
-
-                    {/* 횟수 (누적) */}
-                    <span className="text-[11px] font-extrabold text-gray-500 text-right leading-none">{cumCount}</span>
                   </div>
                 );
               })}

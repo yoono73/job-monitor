@@ -183,14 +183,35 @@ function genPairs(draws: DrawRow[]): Six {
         pairCount[key] = (pairCount[key] || 0) + 1;
       }
   });
-  const pairNums = new Set<number>();
-  for (const [key] of Object.entries(pairCount).sort((a, b) => b[1] - a[1])) {
+  // 번호별 "쌍 강도" 합산 — 많이 묶일수록 가중치 높음
+  const numWeight = new Array(46).fill(0);
+  for (const [key, cnt] of Object.entries(pairCount)) {
     const [a, b] = key.split("-").map(Number);
-    pairNums.add(a); pairNums.add(b);
-    if (pairNums.size >= 15) break;
+    numWeight[a] += cnt;
+    numWeight[b] += cnt;
   }
-  const pool = Array.from(pairNums);
+  // 상위 20개 번호 pool (기존 15개 → 20개로 확대해 다양성 증가)
+  const pool = Array.from({length:45},(_,i)=>i+1)
+    .sort((a,b) => numWeight[b] - numWeight[a]).slice(0, 20);
   if (pool.length < 6) return genHot(draws);
+  // isBalanced 체크 추가 (기존에 없던 균형 검사)
+  for (let t = 0; t < 5000; t++) {
+    // 가중 추출: 쌍 강도 비례
+    const picked: number[] = [];
+    const avail = [...pool];
+    while (picked.length < 6 && avail.length > 0) {
+      const weights = avail.map(n => numWeight[n] + 1);
+      const total = weights.reduce((a,b)=>a+b,0);
+      let r = Math.random() * total;
+      let idx = 0;
+      for (; idx < weights.length - 1; idx++) { r -= weights[idx]; if (r <= 0) break; }
+      picked.push(avail[idx]);
+      avail.splice(idx, 1);
+    }
+    const sorted = picked.sort((a,b)=>a-b) as Six;
+    if (isBalanced(sorted)) return sorted;
+  }
+  // fallback: 단순 무작위
   return pool.sort(() => Math.random() - 0.5).slice(0, 6).sort((a, b) => a - b) as Six;
 }
 
@@ -516,21 +537,23 @@ function genTailDiversity(draws: DrawRow[]): Six {
 
 /* ── 황금구간 전략 (golden_zone) ── */
 function genGoldenZone(): Six {
-  // 합계 120~155, 3저3고(1-22 vs 23-45), 연속쌍 1개
-  for (let t = 0; t < 10000; t++) {
+  // 1등 실제 분포 기반: 합계 110~155, 저2~4개, 연속≤2쌍, 홀수 2~4개
+  // (기존 low===3 & cons===1은 너무 좁아 fallback 多 → 조건 완화)
+  for (let t = 0; t < 20000; t++) {
     const nums = Array.from({length:45},(_,i)=>i+1).sort(()=>Math.random()-0.5).slice(0,6);
-    const sum = nums.reduce((a,b)=>a+b,0);
-    const low = nums.filter(n=>n<=22).length;
-    const sorted = nums.sort((a,b)=>a-b);
+    const sorted = nums.sort((a,b)=>a-b) as Six;
+    const sum = sorted.reduce((a,b)=>a+b,0);
+    const low = sorted.filter(n=>n<=22).length;
+    const odd = sorted.filter(n=>n%2===1).length;
     const cons = sorted.slice(0,-1).filter((n,i)=>sorted[i+1]-n===1).length;
-    if (sum>=120 && sum<=155 && (low===3) && cons===1) return sorted as Six;
+    if (sum>=110 && sum<=155 && low>=2 && low<=4 && cons<=2 && odd>=2 && odd<=4) return sorted;
   }
-  // 조건 완화: 합계 110~165, 2~4저
+  // fallback: 합계·저고 조건만
   for (let t = 0; t < 5000; t++) {
     const nums = Array.from({length:45},(_,i)=>i+1).sort(()=>Math.random()-0.5).slice(0,6);
     const sum = nums.reduce((a,b)=>a+b,0);
     const low = nums.filter(n=>n<=22).length;
-    if (sum>=110 && sum<=165 && low>=2 && low<=4) return nums.sort((a,b)=>a-b) as Six;
+    if (sum>=100 && sum<=160 && low>=2 && low<=4) return nums.sort((a,b)=>a-b) as Six;
   }
   return genBalance();
 }
@@ -672,13 +695,13 @@ function genAutoFilter(): Six {
     const nums = Array.from({ length: 45 }, (_, i) => i + 1).sort(() => Math.random() - 0.5).slice(0, 6);
     const s = nums.sort((a, b) => a - b) as Six;
 
-    // 조건1: 합계 110~150 (기존 100~159보다 정밀)
+    // 조건1: 합계 110~155 (실제 1등 분포 ~65% 커버)
     const sum = s.reduce((a, b) => a + b, 0);
-    if (sum < 110 || sum > 150) continue;
+    if (sum < 110 || sum > 155) continue;
 
-    // 조건2: 홀수 3~4개
+    // 조건2: 홀수 2~4개 (3~4개는 너무 좁음, 2개도 충분히 출현)
     const odd = s.filter(n => n % 2 === 1).length;
-    if (odd < 3 || odd > 4) continue;
+    if (odd < 2 || odd > 4) continue;
 
     // 조건3: 구간 3개 이상 (1-10 / 11-20 / 21-30 / 31-40 / 41-45)
     if (new Set(s.map(secOf)).size < 3) continue;
@@ -717,15 +740,36 @@ function genAutoFilter(): Six {
   return genBalance();
 }
 
-/* ── 번호 분산 전략 — 세트 간 번호 중복 최소화 ── */
+/* ── 번호 분산 전략 — 세트 간 번호 중복 최소화 + 복합 품질 조건 ── */
 function genSpread(usedNumbers: Set<number>): Six {
   const all = Array.from({ length: 45 }, (_, i) => i + 1);
-  // 아직 한 번도 사용되지 않은 번호 우선 사용
   const unused = all.filter(n => !usedNumbers.has(n));
-  const pool = unused.length >= 6 ? unused : all; // 번호가 부족하면 전체 pool 사용
+  const pool = unused.length >= 6 ? unused : all;
+
+  // AC값 계산 (분산도 지표)
+  const calcAC = (s: number[]) => {
+    const diffs = new Set<number>();
+    for (let i = 0; i < s.length; i++)
+      for (let j = i + 1; j < s.length; j++) diffs.add(s[j] - s[i]);
+    return diffs.size - 5;
+  };
+
+  // 복합 품질 조건: isBalanced + 끝자리 다양성(≥4종) + AC값≥6 + 합계110~155
+  for (let t = 0; t < 10000; t++) {
+    const nums = [...pool].sort(() => Math.random() - 0.5).slice(0, 6).sort((a, b) => a - b) as Six;
+    if (!isBalanced(nums)) continue;
+    const sum = nums.reduce((a,b)=>a+b,0);
+    if (sum < 110 || sum > 155) continue;
+    const tails = new Set(nums.map(n => n % 10));
+    if (tails.size < 4) continue;
+    if (calcAC(nums) < 6) continue;
+    return nums;
+  }
+  // 1차 완화: isBalanced + 합계
   for (let t = 0; t < 5000; t++) {
     const nums = [...pool].sort(() => Math.random() - 0.5).slice(0, 6).sort((a, b) => a - b) as Six;
-    if (isBalanced(nums)) return nums;
+    const sum = nums.reduce((a,b)=>a+b,0);
+    if (isBalanced(nums) && sum >= 100 && sum <= 165) return nums;
   }
   return pool.sort(() => Math.random() - 0.5).slice(0, 6).sort((a, b) => a - b) as Six;
 }
