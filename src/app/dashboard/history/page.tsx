@@ -89,14 +89,18 @@ export default function HistoryPage() {
   const supabase = useMemo(() => createClient(), []);
   const [items,   setItems]   = useState<HistoryItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isLoggedIn, setIsLoggedIn] = useState<boolean | null>(null); // null=확인중
   const [filter,  setFilter]  = useState<"all" | "pending" | "bought" | "hit">("all");
   const [toggling, setToggling] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<string | null>(null);
   const [showStrategy, setShowStrategy] = useState(false);
+  const [toggleError, setToggleError] = useState<string | null>(null);
 
   useEffect(() => {
     async function load() {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) { setLoading(false); return; }
+      if (!user) { setIsLoggedIn(false); setLoading(false); return; }
+      setIsLoggedIn(true);
 
       const { data: saved } = await supabase
         .from("saved_numbers")
@@ -138,12 +142,18 @@ export default function HistoryPage() {
     const id = item.saved.id;
     if (toggling === id) return;
     setToggling(id);
+    setToggleError(null);
     const newVal = !item.saved.purchased;
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from("saved_numbers")
       .update({ purchased: newVal })
-      .eq("id", id);
-    if (!error) {
+      .eq("id", id)
+      .select("id, purchased");
+    if (error) {
+      setToggleError("저장 실패: " + error.message);
+    } else if (!data || data.length === 0) {
+      setToggleError("저장 실패: 권한이 없거나 로그인이 필요합니다");
+    } else {
       setItems(prev => prev.map(it =>
         it.saved.id === id
           ? { ...it, saved: { ...it.saved, purchased: newVal } }
@@ -152,6 +162,19 @@ export default function HistoryPage() {
     }
     setToggling(null);
   }, [supabase, toggling]);
+
+  /* ── 삭제 ── */
+  const deleteItem = useCallback(async (item: HistoryItem) => {
+    const id = item.saved.id;
+    if (deleting === id) return;
+    if (!confirm(`${item.saved.draw_no}회 번호를 삭제할까요?`)) return;
+    setDeleting(id);
+    const { error } = await supabase.from("saved_numbers").delete().eq("id", id);
+    if (!error) {
+      setItems(prev => prev.filter(it => it.saved.id !== id));
+    }
+    setDeleting(null);
+  }, [supabase, deleting]);
 
   /* ── 전략별 성과 ── */
   const strategyStats = useMemo(() => {
@@ -377,12 +400,43 @@ export default function HistoryPage() {
         </div>
       )}
 
-      {/* 비어있음 */}
-      {!loading && items.length === 0 && (
+      {/* 토글 에러 */}
+      {toggleError && (
+        <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 mb-4 flex items-center justify-between">
+          <p className="text-xs text-red-600 font-semibold">⚠️ {toggleError}</p>
+          <button onClick={() => setToggleError(null)} className="text-red-400 text-sm font-bold ml-3">✕</button>
+        </div>
+      )}
+
+      {/* 비어있음 — 로그인 안 함 */}
+      {!loading && isLoggedIn === false && (
+        <div className="text-center py-16 text-gray-400">
+          <div className="text-4xl mb-3">🔒</div>
+          <p className="text-sm font-semibold text-gray-600">로그인이 필요합니다</p>
+          <p className="text-xs mt-1 mb-4">번호 저장·구매현황·손익은 로그인 후 이용 가능합니다</p>
+          <a href="/auth/login"
+            className="inline-block px-5 py-2 bg-slate-700 text-white text-sm font-bold rounded-xl hover:bg-slate-600 transition">
+            로그인하기
+          </a>
+        </div>
+      )}
+
+      {/* 비어있음 — 로그인은 했지만 번호 없음 */}
+      {!loading && isLoggedIn === true && items.length === 0 && (
         <div className="text-center py-16 text-gray-400">
           <div className="text-4xl mb-3">🎲</div>
           <p className="text-sm font-semibold text-gray-500">저장된 번호가 없어요</p>
           <p className="text-xs mt-1">번호 생성 후 저장 버튼을 눌러주세요</p>
+        </div>
+      )}
+
+      {/* 구매완료 힌트 — 로그인했고 번호 있지만 구매완료 0개 */}
+      {!loading && isLoggedIn === true && items.length > 0 && stats.boughtCount === 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 mb-4">
+          <p className="text-xs text-amber-700 font-semibold">
+            💡 <strong>구매현황·손익</strong>은 각 번호에서 <strong>"구매완료"</strong> 버튼을 눌러야 집계됩니다
+          </p>
+          <p className="text-[11px] text-amber-500 mt-1">실제로 구매한 게임에만 체크해주세요 → 투자금·수익·손익이 자동 계산됩니다</p>
         </div>
       )}
 
@@ -433,6 +487,15 @@ export default function HistoryPage() {
                     ${isPending ? "bg-amber-100 text-amber-600" : prizeBadge(prize)}`}>
                     {isPending ? "대기" : prize}
                   </span>
+                  {/* 삭제 버튼 */}
+                  <button
+                    onClick={() => deleteItem(it)}
+                    disabled={deleting === it.saved.id}
+                    className="text-gray-300 hover:text-red-500 transition-colors text-sm font-bold leading-none px-1"
+                    title="삭제"
+                  >
+                    {deleting === it.saved.id ? "…" : "✕"}
+                  </button>
                 </div>
               </div>
 
