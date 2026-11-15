@@ -1139,8 +1139,6 @@ export default function GeneratePage() {
   const [savedSets, setSavedSets] = useState<Set<number>>(new Set());
   const [boughtSets, setBoughtSets] = useState<Set<number>>(new Set());
   const [saveMsg,   setSaveMsg] = useState<string | null>(null);
-  const [splitMode, setSplitMode] = useState(false);
-  const [myIdxs,    setMyIdxs]   = useState<Set<number>>(new Set());
   const [shareCopied, setShareCopied] = useState(false);
 
   const [setCount,    setSetCount]   = useState(5);
@@ -1430,37 +1428,6 @@ export default function GeneratePage() {
     const url = buildShareUrl(sets);
     navigator.clipboard.writeText(url);
     setShareCopied(true); setTimeout(() => setShareCopied(false), 2000);
-  };
-
-  /* ── 2인 분산 ── */
-  const toggleSplitMode = () => {
-    if (!splitMode && sets) {
-      const half = Math.ceil(sets.length / 2);
-      setMyIdxs(new Set(sets.slice(0, half).map(s => s.idx)));
-    }
-    setSplitMode(v => !v);
-  };
-
-  const toggleIdx = (idx: number) => {
-    setMyIdxs(prev => {
-      const next = new Set(prev);
-      if (next.has(idx)) next.delete(idx); else next.add(idx);
-      return next;
-    });
-  };
-
-  const copyGroup = (mine: boolean) => {
-    if (!sets) return;
-    const group = sets.filter(s => mine ? myIdxs.has(s.idx) : !myIdxs.has(s.idx));
-    const text = group.map((s, i) => `${i + 1}. ${s.numbers.join("  ")}`).join("\n");
-    navigator.clipboard.writeText(text);
-  };
-
-  const shareGroup = (mine: boolean) => {
-    if (!sets) return;
-    const group = sets.filter(s => mine ? myIdxs.has(s.idx) : !myIdxs.has(s.idx));
-    const url = buildShareUrl(group);
-    navigator.clipboard.writeText(url);
   };
 
   /* ─── Render ─── */
@@ -2332,108 +2299,20 @@ export default function GeneratePage() {
               )}
               <div className="space-y-3">
                 {sets.map(s => (
-                  <div key={s.idx} className="relative">
-                    {/* 분산 모드 배지 */}
-                    {splitMode && (
-                      <button
-                        onClick={() => toggleIdx(s.idx)}
-                        className={`absolute -top-1.5 -left-1.5 z-10 text-[10px] font-bold px-2 py-0.5 rounded-full border shadow-sm transition
-                          ${myIdxs.has(s.idx)
-                            ? "bg-blue-500 text-white border-blue-600"
-                            : "bg-rose-400 text-white border-rose-500"}`}
-                      >
-                        {myIdxs.has(s.idx) ? "👤 나" : "👥 상대"}
-                      </button>
-                    )}
-                    <ResultCard s={s} copied={copied} saved={savedSets} bought={boughtSets} onCopy={copy} onSave={saveSet} onBuy={buyRecord} onDiag={openDiagForSet} draws={draws} bayesStats={bayesStats} pairStats={pairStats} />
-                  </div>
+                  <ResultCard key={s.idx} s={s} copied={copied} saved={savedSets} bought={boughtSets} onCopy={copy} onSave={saveSet} onBuy={buyRecord} onDiag={openDiagForSet} draws={draws} bayesStats={bayesStats} pairStats={pairStats} />
                 ))}
               </div>
 
-              {/* ── 액션 버튼 ── */}
-              <div className="flex gap-2 mt-4">
+              {/* ── 공유 버튼 ── */}
+              <div className="mt-4">
                 <button onClick={shareAll}
-                  className={`flex-1 py-2.5 rounded-xl text-sm font-bold border transition
+                  className={`w-full py-2.5 rounded-xl text-sm font-bold border transition
                     ${shareCopied
                       ? "bg-emerald-50 border-emerald-300 text-emerald-600"
                       : "bg-white border-gray-200 text-gray-600 hover:border-slate-400 hover:text-slate-700"}`}>
                   {shareCopied ? "✓ 링크 복사됨!" : "🔗 전체 공유"}
                 </button>
-                <button onClick={toggleSplitMode}
-                  className={`flex-1 py-2.5 rounded-xl text-sm font-bold border transition
-                    ${splitMode
-                      ? "bg-slate-700 text-white border-slate-700"
-                      : "bg-white border-gray-200 text-gray-600 hover:border-slate-400 hover:text-slate-700"}`}>
-                  {splitMode ? "✓ 분산 모드" : "👫 2인 분산"}
-                </button>
               </div>
-
-              {/* ── 2인 분산 패널 ── */}
-              {splitMode && (
-                <div className="mt-3 grid grid-cols-2 gap-3">
-                  {/* 내 몫 */}
-                  <div className="bg-blue-50 border border-blue-200 rounded-2xl p-3">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-xs font-extrabold text-blue-700">👤 내 몫 {myIdxs.size}게임</span>
-                      <span className="text-xs text-blue-500 font-bold">{myIdxs.size * 1000}원</span>
-                    </div>
-                    <div className="space-y-1.5 mb-3">
-                      {sets.filter(s => myIdxs.has(s.idx)).map(s => (
-                        <div key={s.idx} className="flex gap-0.5 flex-wrap">
-                          {s.numbers.map((n, i) => (
-                            <span key={i} className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-[10px] font-bold
-                              ${n<=10?"bg-[#FBC400] text-black":n<=20?"bg-[#069FDD] text-white":
-                                n<=30?"bg-[#FF5757] text-white":n<=40?"bg-[#AAAAAA] text-white":"bg-[#B0D840] text-black"}`}>
-                              {n}
-                            </span>
-                          ))}
-                        </div>
-                      ))}
-                    </div>
-                    <div className="flex gap-1.5">
-                      <button onClick={() => copyGroup(true)}
-                        className="flex-1 py-1.5 text-[11px] font-bold bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition">
-                        복사
-                      </button>
-                      <button onClick={() => shareGroup(true)}
-                        className="flex-1 py-1.5 text-[11px] font-bold bg-white border border-blue-300 text-blue-600 rounded-lg hover:bg-blue-50 transition">
-                        링크
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* 상대방 몫 */}
-                  <div className="bg-rose-50 border border-rose-200 rounded-2xl p-3">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-xs font-extrabold text-rose-700">👥 상대 {sets.length - myIdxs.size}게임</span>
-                      <span className="text-xs text-rose-500 font-bold">{(sets.length - myIdxs.size) * 1000}원</span>
-                    </div>
-                    <div className="space-y-1.5 mb-3">
-                      {sets.filter(s => !myIdxs.has(s.idx)).map(s => (
-                        <div key={s.idx} className="flex gap-0.5 flex-wrap">
-                          {s.numbers.map((n, i) => (
-                            <span key={i} className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-[10px] font-bold
-                              ${n<=10?"bg-[#FBC400] text-black":n<=20?"bg-[#069FDD] text-white":
-                                n<=30?"bg-[#FF5757] text-white":n<=40?"bg-[#AAAAAA] text-white":"bg-[#B0D840] text-black"}`}>
-                              {n}
-                            </span>
-                          ))}
-                        </div>
-                      ))}
-                    </div>
-                    <div className="flex gap-1.5">
-                      <button onClick={() => copyGroup(false)}
-                        className="flex-1 py-1.5 text-[11px] font-bold bg-rose-500 text-white rounded-lg hover:bg-rose-600 transition">
-                        복사
-                      </button>
-                      <button onClick={() => shareGroup(false)}
-                        className="flex-1 py-1.5 text-[11px] font-bold bg-white border border-rose-300 text-rose-600 rounded-lg hover:bg-rose-50 transition">
-                        링크
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
 
               <div className="flex items-center justify-between px-1 py-2 mt-3 text-sm text-gray-500">
                 <span>총 <strong className="text-gray-800">{sets.length}장</strong></span>
