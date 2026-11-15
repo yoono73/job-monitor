@@ -1413,35 +1413,33 @@ export default function GeneratePage() {
         <div className="flex items-center gap-2 mb-2">
           <span className="text-base">📢</span>
           <h3 className="text-sm font-bold text-blue-800">최근 업데이트</h3>
-          <span className="ml-auto text-[11px] text-blue-400 font-mono">2026-11-07</span>
+          <span className="ml-auto text-[11px] text-blue-400 font-mono">2026-11-15</span>
         </div>
         <ul className="space-y-1.5 text-xs text-blue-700">
           <li className="flex items-start gap-1.5">
-            <span className="mt-0.5 shrink-0">🎉</span>
+            <span className="mt-0.5 shrink-0">🔧</span>
             <span>
-              <span className="font-semibold text-violet-700">v2.4 신규 전략 3개</span> —{" "}
-              1~1249회 전체 분석 기반: <span className="font-semibold">저중고균형 · 최근핫번호 · 황금필터강화</span>.
-              아래 전략 선택 드롭다운에서 <span className="bg-violet-100 text-violet-700 px-1 rounded font-bold">NEW</span> 딱지 항목을 확인하세요.
+              <span className="font-semibold text-violet-700">v2.7 조건필터 합계 하한 완화</span> —{" "}
+              합계 하한을 110→100으로 조정해 <span className="font-semibold text-indigo-700">진단점수 110점 만점</span> 번호 생성을 복원했습니다.
             </span>
           </li>
           <li className="flex items-start gap-1.5">
-            <span className="mt-0.5 shrink-0">🔍</span>
+            <span className="mt-0.5 shrink-0">📉</span>
             <span>
-              <span className="font-semibold">번호 진단</span> 신규 —{" "}
-              6개 번호를 직접 입력하면 <span className="font-semibold text-indigo-700">종합 점수(0~100)</span>와 8가지 통계 기준으로 분석해줍니다.
-              낮은 점수면 AI 교체 번호까지 제안해요.
+              <span className="font-semibold">v2.6 분산추천 끝자리9 편향 반영</span> —{" "}
+              1~1250회 분석 결과 끝자리9(9·19·29·39)가 118회 저출현. <span className="font-semibold">분산추천</span>에서 최대 1개로 제한합니다.
             </span>
           </li>
           <li className="flex items-start gap-1.5">
             <span className="mt-0.5 shrink-0">📊</span>
             <span>
-              <span className="font-semibold">전략 백테스팅</span> —{" "}
-              통계 탭에서 최근 200회 시뮬레이션 결과를 확인하고, <span className="font-semibold text-amber-700">1위 전략을 직접 선택</span>해 생성하세요.
+              <span className="font-semibold">v2.5 전체 분석 캐시</span> —{" "}
+              1~1250회 전체 기출 패턴을 분석·캐싱. 빈도·쌍·구간·끝자리 통계 기반으로 모든 전략이 더 정교해졌습니다.
             </span>
           </li>
           <li className="flex items-start gap-1.5">
             <span className="mt-0.5 text-blue-400 shrink-0">✓</span>
-            <span><span className="font-semibold">대량 생성</span> — 10·20·30·50세트(5만원치) 전략 자동 순환 지원</span>
+            <span><span className="font-semibold">번호 진단</span> — 6개 번호 입력 시 종합 점수(0~110)와 8가지 통계 기준 분석 · AI 교체 번호 제안</span>
           </li>
         </ul>
       </div>
