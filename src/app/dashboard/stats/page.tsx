@@ -785,64 +785,94 @@ export default function StatsPage() {
   return (
     <div className="px-4 py-5 md:px-6 lg:px-8 max-w-3xl mx-auto">
 
-      {/* ── 🎱 최근 당첨번호 ── */}
-      <div className="bg-white border border-gray-200 rounded-2xl p-4 mb-5 shadow-sm">
-        <h3 className="text-sm font-extrabold text-gray-800 mb-3 flex items-center gap-1.5">
-          🎱 최근 당첨번호
-          <span className="text-[11px] font-normal text-gray-400 ml-1">최근 5회차</span>
-        </h3>
+      {/* ── 🏆 패턴별 당첨 이력 ── */}
+      {(() => {
+        const wins = [...history]
+          .filter(h => (h.matched_count !== null && h.matched_count >= 3) || h.prize_rank !== null)
+          .sort((a, b) => b.draw_no - a.draw_no || a.id - b.id);
+        const total = wins.length;
 
-        {/* 최근 5회 당첨번호 목록 */}
-        {draws.length > 0 ? (
-          <div className="space-y-2">
-            {[...draws].sort((a, b) => b.draw_no - a.draw_no).slice(0, 5).map(d => {
-              const nums6 = [d.n1, d.n2, d.n3, d.n4, d.n5, d.n6];
-              return (
-                <div key={d.draw_no} className="bg-gray-50 rounded-xl px-3 py-2.5 border border-gray-100">
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-extrabold text-gray-700">{d.draw_no}회</span>
-                      <span className="text-[10px] text-gray-400">{d.draw_date?.slice(0, 10)}</span>
+        const rankBadge = (rank: number | null, matched: number | null) => {
+          if (rank === 1) return { text: '1등', cls: 'bg-yellow-400 text-yellow-900' };
+          if (rank === 2) return { text: '2등', cls: 'bg-orange-400 text-white' };
+          if (rank === 3) return { text: '3등', cls: 'bg-rose-500 text-white' };
+          if (rank === 4) return { text: '4등', cls: 'bg-blue-500 text-white' };
+          if (rank === 5) return { text: '5등', cls: 'bg-gray-400 text-white' };
+          if (matched !== null && matched >= 3) return { text: `${matched}개`, cls: 'bg-emerald-400 text-white' };
+          return { text: '-', cls: 'bg-gray-200 text-gray-500' };
+        };
+
+        const stratLabel = (s: string | null) => {
+          const map: Record<string, string> = {
+            condition_filter: '조건필터', '조건필터': '조건필터',
+            golden_range: '황금구간', '황금구간': '황금구간',
+            number_pair: '번호쌍', '번호쌍': '번호쌍',
+            preferred: '선호번호', '선호번호': '선호번호',
+            distribution: '분산추천', '분산추천': '분산추천',
+            tail_diversity: '끝자리', long_absent: '공백', bayesian: '베이지안',
+          };
+          return map[s ?? ''] ?? (s ?? '-');
+        };
+
+        if (total === 0) return null;
+
+        return (
+          <div className="bg-white border border-gray-200 rounded-2xl p-4 mb-5 shadow-sm">
+            <h3 className="text-sm font-extrabold text-gray-800 mb-1 flex items-center gap-1.5">
+              🏆 패턴별 당첨 이력
+              <span className="text-[11px] font-normal text-gray-400 ml-1">3개 이상 일치</span>
+              <span className="ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">총 {total}회</span>
+            </h3>
+            <p className="text-[10px] text-gray-400 mb-3">어떤 전략이 적중했는지 확인하고 패턴 선택에 참고하세요</p>
+
+            {/* 헤더 행 */}
+            <div className="grid grid-cols-[42px_36px_1fr_52px_24px] gap-x-1.5 mb-1 px-1.5">
+              <span className="text-[10px] font-bold text-gray-400">회차</span>
+              <span className="text-[10px] font-bold text-gray-400">등수</span>
+              <span className="text-[10px] font-bold text-gray-400">번호</span>
+              <span className="text-[10px] font-bold text-gray-400">패턴</span>
+              <span className="text-[10px] font-bold text-gray-400 text-right">#</span>
+            </div>
+
+            <div className="space-y-1.5">
+              {wins.map((w, idx) => {
+                const nums6 = Array.isArray(w.numbers) ? (w.numbers as number[]) : [];
+                const hasNums = nums6.length === 6 && nums6.some(n => n > 0);
+                const { text: rankText, cls: rankCls } = rankBadge(w.prize_rank, w.matched_count);
+                const cumCount = total - idx;
+
+                return (
+                  <div key={w.id} className="grid grid-cols-[42px_36px_1fr_52px_24px] gap-x-1.5 items-center bg-gray-50 rounded-xl px-1.5 py-2 border border-gray-100">
+                    {/* 회차 */}
+                    <span className="text-[11px] font-bold text-gray-700 leading-none">{w.draw_no}회</span>
+
+                    {/* 등수 */}
+                    <span className={`text-[10px] font-extrabold px-1 py-0.5 rounded-full text-center leading-none ${rankCls}`}>
+                      {rankText}
+                    </span>
+
+                    {/* 번호 */}
+                    <div className="flex gap-0.5 flex-wrap">
+                      {hasNums
+                        ? nums6.map((n, i) => <Ball key={i} n={n} size="sm" />)
+                        : <span className="text-[10px] text-gray-400 italic self-center">미기록</span>
+                      }
                     </div>
-                    <div className="flex items-center gap-1.5">
-                      {d.winners_1st !== null && d.winners_1st !== undefined && (
-                        <span className="text-[10px] text-gray-400">1등 {d.winners_1st}명</span>
-                      )}
-                      {d.prize_1st !== null && d.prize_1st !== undefined && (
-                        <span className="text-[10px] font-bold text-emerald-600">
-                          {(d.prize_1st / 100000000).toFixed(1)}억
-                        </span>
-                      )}
-                    </div>
+
+                    {/* 패턴 */}
+                    <span className="text-[10px] font-semibold text-indigo-700 bg-indigo-50 rounded px-1 py-0.5 text-center truncate leading-none">
+                      {stratLabel(w.strategy)}
+                    </span>
+
+                    {/* 횟수 (누적) */}
+                    <span className="text-[11px] font-extrabold text-gray-500 text-right leading-none">{cumCount}</span>
                   </div>
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    {nums6.map((n, i) => <Ball key={i} n={n} size="sm" />)}
-                    <span className="text-gray-300 font-bold text-sm mx-0.5">+</span>
-                    <div className="inline-flex items-center justify-center w-7 h-7 rounded-full border-2 border-dashed border-gray-400 bg-white text-gray-500 text-xs font-bold">
-                      {d.bonus}
-                    </div>
-                  </div>
-                  {/* 합계·홀짝 요약 */}
-                  <div className="flex gap-2 mt-1.5">
-                    {d.num_sum !== null && (
-                      <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded ${
-                        d.num_sum >= 115 && d.num_sum <= 185 ? "bg-emerald-100 text-emerald-700" : "bg-orange-100 text-orange-600"
-                      }`}>합 {d.num_sum}</span>
-                    )}
-                    {d.odd_count !== null && (
-                      <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-violet-100 text-violet-700">
-                        홀{d.odd_count} 짝{6 - d.odd_count}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
-        ) : (
-          <p className="text-xs text-gray-400 text-center py-4">데이터 로딩 중...</p>
-        )}
-      </div>
+        );
+      })()}
 
       {/* ── 베이지안 헤더 ── */}
       <div className="bg-gradient-to-br from-violet-600 via-purple-600 to-indigo-600 rounded-2xl p-5 mb-5 shadow-lg text-center relative overflow-hidden">
@@ -969,39 +999,6 @@ export default function StatsPage() {
               <p className="text-[10px] text-gray-400 mt-0.5">역대 1등 당첨번호 중 8조건 동시 통과 비율 (실시간 계산)</p>
             </div>
 
-            {/* 8조건 필터 적중 사례 */}
-            <div className="mt-3 bg-gradient-to-r from-yellow-50 to-amber-50 border-2 border-yellow-300 rounded-xl p-3">
-              <div className="flex items-center gap-1.5 mb-2">
-                <span className="text-sm">🏆</span>
-                <span className="text-xs font-extrabold text-yellow-800">8조건 필터 적중 사례</span>
-                <span className="ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-yellow-200 text-yellow-800">1250회 · 4등</span>
-              </div>
-              <p className="text-[10px] text-gray-500 mb-2">
-                8조건 통과 번호로 뽑은 조합이 실제 당첨번호와 <span className="font-bold text-yellow-700">4개 일치</span> — 필터 유효성 검증 완료
-              </p>
-              <div className="flex items-center gap-1 mb-1.5">
-                <span className="text-[9px] text-gray-400 w-10 shrink-0">추천번호</span>
-                <div className="flex gap-1">
-                  {[1,18,24,27,28,35].map((n) => {
-                    const hit = [1,5,18,23,27,28].includes(n);
-                    return (
-                      <div key={n} className="relative">
-                        <Ball n={n} size="sm" />
-                        {hit && <span className="absolute -top-1 -right-1 text-[8px]">✓</span>}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-              <div className="flex items-center gap-1">
-                <span className="text-[9px] text-gray-400 w-10 shrink-0">당첨번호</span>
-                <div className="flex gap-1">
-                  {[1,5,18,23,27,28].map((n) => <Ball key={n} n={n} size="sm" />)}
-                  <span className="text-gray-300 font-bold text-xs mx-0.5">+</span>
-                  <div className="inline-flex items-center justify-center w-7 h-7 rounded-full border-2 border-dashed border-gray-400 bg-white text-gray-500 text-[10px] font-bold">8</div>
-                </div>
-              </div>
-            </div>
           </div>
         );
       })()}
