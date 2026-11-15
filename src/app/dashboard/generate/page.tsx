@@ -1209,14 +1209,6 @@ export default function GeneratePage() {
     setShowDiagnosis(true);
     const result = diagnosNumbers(s.numbers, draws, bayesStats, pairStats);
     setDiagResult(result);
-    // 진단 결과로 스크롤 (헤더가 아닌 결과 div로 직접)
-    setTimeout(() => {
-      const el = diagResultRef.current ?? diagSectionRef.current;
-      if (el) {
-        const y = el.getBoundingClientRect().top + window.pageYOffset - 70;
-        window.scrollTo({ top: Math.max(0, y), behavior: "smooth" });
-      }
-    }, 200);
   }, [draws, bayesStats, pairStats]);
 
   const runAutoFilter = () => {

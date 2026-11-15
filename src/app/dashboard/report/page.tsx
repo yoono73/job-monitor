@@ -18,6 +18,10 @@ interface DrawRow {
   n4: number; n5: number; n6: number;
   bonus: number;
 }
+interface BayesStat   { number: number; bayesian_rank: number; }
+interface PairStat    { num_a: number; num_b: number; }
+interface DiagCriterion { label: string; pass: boolean; detail: string; points: number; }
+interface DiagResult    { score: number; criteria: DiagCriterion[]; }
 interface Judged {
   saved: SavedRow;
   match: number;
@@ -99,6 +103,77 @@ function ballColor(n: number) {
   return "bg-[#B0D840] text-black";
 }
 
+/* ─── 번호 진단 (draws 오름차순 기준 — report page) ─── */
+function diagnosNumbers(nums: number[], draws: DrawRow[], bayesStats: BayesStat[], pairStats: PairStat[]): DiagResult {
+  const sorted = [...nums].sort((a, b) => a - b);
+  const criteria: DiagCriterion[] = [];
+
+  const calcAC = (s: number[]) => {
+    const diffs = new Set<number>();
+    for (let i = 0; i < s.length; i++)
+      for (let j = i + 1; j < s.length; j++)
+        diffs.add(s[j] - s[i]);
+    return diffs.size - 5;
+  };
+
+  // 1. 합계 황금구간 (15점)
+  const sum = sorted.reduce((s, n) => s + n, 0);
+  criteria.push({ label: "합계 핵심구간 (115~140)", pass: sum >= 115 && sum <= 140, detail: `합계 ${sum}`, points: 15 });
+
+  // 2. 홀짝 균형 (15점)
+  const oddCnt = sorted.filter(n => n % 2 === 1).length;
+  criteria.push({ label: "홀짝 완벽 균형 (홀수 3개)", pass: oddCnt === 3, detail: `홀수 ${oddCnt}개`, points: 15 });
+
+  // 3. 3구간 커버 (15점)
+  const secs = new Set(sorted.map(n => n <= 15 ? 1 : n <= 30 ? 2 : 3));
+  criteria.push({ label: "3구간 완전 커버 (1~15·16~30·31~45)", pass: secs.size === 3, detail: `${secs.size}구간`, points: 15 });
+
+  // 4. 베이지안 상위 (15점)
+  if (bayesStats.length > 0) {
+    const avgRank = sorted.map(n => { const b = bayesStats.find(x => x.number === n); return b ? b.bayesian_rank : 45; }).reduce((s, r) => s + r, 0) / sorted.length;
+    criteria.push({ label: "베이지안 상위 (평균 순위 18위↑)", pass: avgRank < 18, detail: `평균 ${avgRank.toFixed(1)}위`, points: 15 });
+  } else {
+    criteria.push({ label: "베이지안 상위", pass: false, detail: "데이터 로딩 중", points: 15 });
+  }
+
+  // 5. 핫번호 2개↑ (10점) — draws가 오름차순이므로 뒤에서 100개 슬라이스
+  const recent = draws.slice(-Math.min(100, draws.length));
+  const freq: Record<number, number> = {};
+  for (const d of recent) [d.n1, d.n2, d.n3, d.n4, d.n5, d.n6].forEach(n => { freq[n] = (freq[n] ?? 0) + 1; });
+  const hotNums = Object.entries(freq).sort(([, a], [, b]) => b - a).slice(0, 15).map(([n]) => +n);
+  const hotCnt = sorted.filter(n => hotNums.includes(n)).length;
+  criteria.push({ label: "핫번호 2개↑ (최근 100회 상위 15)", pass: hotCnt >= 2, detail: `${hotCnt}개 포함`, points: 10 });
+
+  // 6. 연속번호 1쌍↑ (10점)
+  let consPairs = 0;
+  for (let i = 0; i < sorted.length - 1; i++) if (sorted[i + 1] - sorted[i] === 1) consPairs++;
+  criteria.push({ label: "연속번호 1쌍 이상", pass: consPairs >= 1, detail: `${consPairs}쌍`, points: 10 });
+
+  // 7. 끝자리 5종↑ (10점)
+  const tails = new Set(sorted.map(n => n % 10));
+  criteria.push({ label: "끝자리 다양성 (5종 이상)", pass: tails.size >= 5, detail: `${tails.size}종`, points: 10 });
+
+  // 8. AC값 ≥8 (10점)
+  const acVal = calcAC(sorted);
+  criteria.push({ label: "AC값 ≥8 (번호 분산성 우수)", pass: acVal >= 8, detail: `AC=${acVal}`, points: 10 });
+
+  // 9. 상위 페어 3개↑ (10점)
+  if (pairStats.length > 0) {
+    const myPairs: string[] = [];
+    for (let i = 0; i < sorted.length; i++)
+      for (let j = i + 1; j < sorted.length; j++)
+        myPairs.push(`${sorted[i]}-${sorted[j]}`);
+    const topKeys = new Set(pairStats.map(p => `${Math.min(p.num_a, p.num_b)}-${Math.max(p.num_a, p.num_b)}`));
+    const hits = myPairs.filter(k => topKeys.has(k)).length;
+    criteria.push({ label: "상위 페어 3개↑ (궁합 좋은 쌍)", pass: hits >= 3, detail: `${hits}/15쌍 매칭`, points: 10 });
+  } else {
+    criteria.push({ label: "상위 페어 3개↑ (궁합 좋은 쌍)", pass: false, detail: "데이터 로딩 중", points: 10 });
+  }
+
+  const score = criteria.reduce((s, c) => c.pass ? s + c.points : s, 0);
+  return { score, criteria };
+}
+
 function verdict(n: number, avg: number) {
   if (n < 30) return { label: "아직 게임이 적어요", cls: "bg-gray-100 text-gray-500", z: null as number | null };
   const z = (avg - EXP_MATCH) / Math.sqrt(VAR_MATCH / n);
@@ -120,6 +195,9 @@ export default function ReportPage() {
   const [recs, setRecs] = useState<number[][] | null>(null);
   const [recMsg, setRecMsg] = useState<string | null>(null);
   const [recSaving, setRecSaving] = useState(false);
+  const [bayesStats, setBayesStats] = useState<BayesStat[]>([]);
+  const [pairStats,  setPairStats]  = useState<PairStat[]>([]);
+  const [recDiags,   setRecDiags]   = useState<(DiagResult | null)[]>([]);
 
   useEffect(() => {
     async function load() {
@@ -137,6 +215,18 @@ export default function ReportPage() {
       }
       setDraws(all);
       if (all.length > 0) setNextDrawNo(all[all.length - 1].draw_no + 1);
+
+      // 베이지안/페어 통계 (진단용)
+      supabase.from("lotto_number_stats")
+        .select("number,bayesian_rank")
+        .order("bayesian_rank")
+        .then(({ data }) => { if (data) setBayesStats(data as BayesStat[]); });
+
+      supabase.from("lotto_pair_stats")
+        .select("num_a,num_b")
+        .order("posterior_mean", { ascending: false })
+        .limit(100)
+        .then(({ data }) => { if (data) setPairStats(data as PairStat[]); });
 
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
@@ -286,27 +376,63 @@ export default function ReportPage() {
             </p>
             <div className="flex items-center gap-2 mb-3">
               {[5, 10].map(c => (
-                <button key={c} onClick={() => { setRecCount(c); setRecs(null); setRecMsg(null); }}
+                <button key={c} onClick={() => { setRecCount(c); setRecs(null); setRecMsg(null); setRecDiags([]); }}
                   className={`px-3 py-1.5 rounded-xl text-xs font-bold ${recCount === c ? "bg-violet-600 text-white" : "bg-gray-100 text-gray-500"}`}>
                   {c}게임
                 </button>
               ))}
-              <button onClick={() => { setRecs(genRecommended(recCount)); setRecMsg(null); }}
+              <button onClick={() => { setRecs(genRecommended(recCount)); setRecMsg(null); setRecDiags([]); }}
                 className="ml-auto px-3 py-1.5 rounded-xl text-xs font-bold bg-violet-100 text-violet-700 hover:bg-violet-200">
                 {recs ? "다시 뽑기" : "추천 받기"}
               </button>
             </div>
             {recs && (
               <>
-                <div className="space-y-2 mb-3">
-                  {recs.map((nums, i) => (
-                    <div key={i} className="flex items-center gap-1.5">
-                      <span className="w-5 text-[11px] text-gray-400 shrink-0">{i + 1}</span>
-                      {nums.map(n => (
-                        <span key={n} className={`inline-flex items-center justify-center w-8 h-8 rounded-full font-bold text-xs shrink-0 ${ballColor(n)}`}>{n}</span>
-                      ))}
-                    </div>
-                  ))}
+                <div className="space-y-1.5 mb-3">
+                  {recs.map((nums, i) => {
+                    const diag = recDiags[i] ?? null;
+                    return (
+                      <div key={i}>
+                        <div className="flex items-center gap-1 flex-wrap">
+                          <span className="w-5 text-[11px] text-gray-400 shrink-0">{i + 1}</span>
+                          {nums.map(n => (
+                            <span key={n} className={`inline-flex items-center justify-center w-8 h-8 rounded-full font-bold text-xs shrink-0 ${ballColor(n)}`}>{n}</span>
+                          ))}
+                          <span className="text-[11px] font-semibold text-violet-600 bg-violet-50 px-2 py-0.5 rounded-lg ml-1 shrink-0">🎯 분산추천</span>
+                          <button
+                            onClick={() => {
+                              setRecDiags(prev => {
+                                const next = [...prev];
+                                next[i] = diag ? null : diagnosNumbers(nums, draws, bayesStats, pairStats);
+                                return next;
+                              });
+                            }}
+                            className={`text-xs px-2 py-0.5 rounded-lg border transition font-medium shrink-0 ml-auto
+                              ${diag ? "border-indigo-400 text-indigo-600 bg-indigo-50" : "border-indigo-200 text-indigo-500 hover:border-indigo-400 hover:bg-indigo-50"}`}
+                          >
+                            🔍 진단{diag ? " ▲" : ""}
+                          </button>
+                        </div>
+                        {diag && (
+                          <div className="mt-1.5 ml-6 space-y-1">
+                            <div className={`rounded-xl px-3 py-2 flex items-center gap-3 border
+                              ${diag.score >= 70 ? "bg-emerald-50 border-emerald-200" : diag.score >= 50 ? "bg-amber-50 border-amber-200" : "bg-rose-50 border-rose-200"}`}>
+                              <span className={`text-xl font-extrabold ${diag.score >= 70 ? "text-emerald-600" : diag.score >= 50 ? "text-amber-600" : "text-rose-500"}`}>{diag.score}점</span>
+                              <span className="text-xs text-gray-600">{diag.score >= 70 ? "✅ 우수" : diag.score >= 50 ? "⚠️ 보통" : "❌ 미흡"}</span>
+                            </div>
+                            <div className="space-y-0.5">
+                              {diag.criteria.map((c, ci) => (
+                                <div key={ci} className={`flex items-center justify-between rounded-lg px-2 py-1 text-[11px] ${c.pass ? "bg-emerald-50" : "bg-gray-50"}`}>
+                                  <span className={c.pass ? "text-emerald-700" : "text-gray-500"}>{c.pass ? "✅" : "❌"} {c.label}</span>
+                                  <span className="text-gray-400 ml-2 shrink-0">{c.detail}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
                 <p className="text-[11px] text-gray-400 mb-2">
                   45개 중 {new Set(recs.flat()).size}개 번호를 사용했어요.
