@@ -895,7 +895,7 @@ function Ball({ n }: { n: number }) {
 }
 
 /* ─── Result Card ─── */
-function ResultCard({ s, copied, saved, bought, onCopy, onSave, onBuy, onDiag }: {
+function ResultCard({ s, copied, saved, bought, onCopy, onSave, onBuy, onDiag, draws, bayesStats, pairStats }: {
   s: LottoSet;
   copied: number | null;
   saved: Set<number>;
@@ -904,10 +904,20 @@ function ResultCard({ s, copied, saved, bought, onCopy, onSave, onBuy, onDiag }:
   onSave: (s: LottoSet) => void;
   onBuy: (s: LottoSet) => void;
   onDiag: (s: LottoSet) => void;
+  draws: DrawRow[];
+  bayesStats: BayesStat[];
+  pairStats: PairStat[];
 }) {
+  const [inlineDiag, setInlineDiag] = useState<DiagResult | null>(null);
   const cc = CAT_COLOR[s.category] ?? CAT_COLOR["균형기반"];
   const isSaved = saved.has(s.idx);
   const isBought = bought.has(s.idx);
+
+  function handleDiag() {
+    if (inlineDiag) { setInlineDiag(null); return; }
+    setInlineDiag(diagnosNumbers(s.numbers, draws, bayesStats, pairStats));
+  }
+
   return (
     <div className={`bg-white border rounded-2xl p-4 shadow-sm hover:shadow-md transition-shadow
       ${isBought ? "border-orange-300 bg-orange-50/30" : isSaved ? "border-emerald-300 bg-emerald-50/30" : "border-gray-200"}`}>
@@ -951,10 +961,13 @@ function ResultCard({ s, copied, saved, bought, onCopy, onSave, onBuy, onDiag }:
             {isBought ? "🎫 구매됨" : "🎫 구매"}
           </button>
           <button
-            onClick={() => onDiag(s)}
-            className="text-xs px-2.5 py-1 rounded-lg border border-gray-200 text-gray-400 hover:text-indigo-600 hover:border-indigo-400 transition"
+            onClick={handleDiag}
+            className={`text-xs px-2.5 py-1 rounded-lg border transition
+              ${inlineDiag
+                ? "border-indigo-400 text-indigo-600 bg-indigo-50"
+                : "border-gray-200 text-gray-400 hover:text-indigo-600 hover:border-indigo-400"}`}
           >
-            🔍 진단
+            🔍 진단{inlineDiag ? " ▲" : ""}
           </button>
         </div>
       </div>
@@ -962,6 +975,44 @@ function ResultCard({ s, copied, saved, bought, onCopy, onSave, onBuy, onDiag }:
         {s.numbers.map((n, i) => <Ball key={i} n={n} />)}
       </div>
       <p className="text-xs text-gray-400 mt-2 sm:hidden">{s.desc}</p>
+
+      {/* ── 인라인 진단 결과 ── */}
+      {inlineDiag && (
+        <div className="mt-3 pt-3 border-t border-gray-100 space-y-2">
+          <div className={`rounded-xl px-4 py-2.5 flex items-center justify-center gap-3 border
+            ${inlineDiag.score >= 70 ? "bg-emerald-50 border-emerald-200" :
+              inlineDiag.score >= 50 ? "bg-amber-50 border-amber-200" :
+              "bg-rose-50 border-rose-200"}`}>
+            <span className={`text-2xl font-extrabold
+              ${inlineDiag.score >= 70 ? "text-emerald-600" :
+                inlineDiag.score >= 50 ? "text-amber-600" : "text-rose-600"}`}>
+              {inlineDiag.score}점
+            </span>
+            <span className="text-xs text-gray-600">
+              {inlineDiag.score >= 70 ? "✅ 우수" :
+               inlineDiag.score >= 50 ? "⚠️ 보통" : "❌ 미흡"}
+            </span>
+          </div>
+          <div className="space-y-1">
+            {inlineDiag.criteria.map((c, i) => (
+              <div key={i} className={`flex items-center justify-between rounded-lg px-2.5 py-1.5
+                ${c.pass ? "bg-emerald-50" : "bg-gray-50"}`}>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs">{c.pass ? "✅" : "❌"}</span>
+                  <span className="text-xs text-gray-700">{c.label}</span>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <span className="text-[10px] text-gray-400">{c.detail}</span>
+                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full
+                    ${c.pass ? "bg-emerald-100 text-emerald-700" : "bg-gray-100 text-gray-400"}`}>
+                    +{c.points}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -2027,7 +2078,7 @@ export default function GeneratePage() {
                 </div>
               )}
               <div className="space-y-3">
-                {sets.map(s => <ResultCard key={s.idx} s={s} copied={copied} saved={savedSets} bought={boughtSets} onCopy={copy} onSave={saveSet} onBuy={buyRecord} onDiag={openDiagForSet} />)}
+                {sets.map(s => <ResultCard key={s.idx} s={s} copied={copied} saved={savedSets} bought={boughtSets} onCopy={copy} onSave={saveSet} onBuy={buyRecord} onDiag={openDiagForSet} draws={draws} bayesStats={bayesStats} pairStats={pairStats} />)}
               </div>
               <div className="flex items-center justify-between px-1 py-2 mt-3 text-sm text-gray-500">
                 <span>총 <strong className="text-gray-800">5장</strong></span>
@@ -2294,7 +2345,7 @@ export default function GeneratePage() {
                         {myIdxs.has(s.idx) ? "👤 나" : "👥 상대"}
                       </button>
                     )}
-                    <ResultCard s={s} copied={copied} saved={savedSets} bought={boughtSets} onCopy={copy} onSave={saveSet} onBuy={buyRecord} onDiag={openDiagForSet} />
+                    <ResultCard s={s} copied={copied} saved={savedSets} bought={boughtSets} onCopy={copy} onSave={saveSet} onBuy={buyRecord} onDiag={openDiagForSet} draws={draws} bayesStats={bayesStats} pairStats={pairStats} />
                   </div>
                 ))}
               </div>
