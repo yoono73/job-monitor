@@ -13,6 +13,7 @@ interface SavedRow {
   set_idx: number;
   created_at: string;
   purchased: boolean;
+  is_test?: boolean;
 }
 interface DrawRow {
   draw_no: number;
@@ -88,6 +89,8 @@ const CAT_COLOR: Record<string, string> = {
 export default function HistoryPage() {
   const supabase = useMemo(() => createClient(), []);
   const [items,   setItems]   = useState<HistoryItem[]>([]);
+  const [itemsTest, setItemsTest] = useState<HistoryItem[]>([]);
+  const [histTab, setHistTab] = useState<"user" | "test">("user");
   const [loading, setLoading] = useState(true);
   const [isLoggedIn, setIsLoggedIn] = useState<boolean | null>(null); // null=확인중
   const [filter,  setFilter]  = useState<"all" | "pending" | "bought" | "hit">("all");
@@ -110,7 +113,8 @@ export default function HistoryPage() {
 
       if (!saved || saved.length === 0) { setLoading(false); return; }
 
-      const drawNos = [...new Set((saved as SavedRow[]).map(s => s.draw_no))];
+      const allRows = saved as SavedRow[];
+      const drawNos = [...new Set(allRows.map(s => s.draw_no))];
       const { data: draws } = await supabase
         .from("lotto_draws")
         .select("draw_no,n1,n2,n3,n4,n5,n6,bonus,draw_date")
@@ -119,7 +123,7 @@ export default function HistoryPage() {
       const drawMap = new Map<number, DrawRow>();
       (draws as DrawRow[] ?? []).forEach(d => drawMap.set(d.draw_no, d));
 
-      const result: HistoryItem[] = (saved as SavedRow[]).map(s => {
+      const toHistoryItem = (s: SavedRow): HistoryItem => {
         const draw = drawMap.get(s.draw_no) ?? null;
         if (!draw) {
           return { saved: s, draw: null, matchCount: 0, hasBonus: false, prize: "대기중", prizeAmount: 0 };
@@ -129,9 +133,10 @@ export default function HistoryPage() {
         const hasBonus = s.numbers.includes(draw.bonus);
         const prize = getPrize(matchCount, hasBonus);
         return { saved: s, draw, matchCount, hasBonus, prize, prizeAmount: getPrizeAmount(prize) };
-      });
+      };
 
-      setItems(result);
+      setItems(allRows.filter(s => !s.is_test).map(toHistoryItem));
+      setItemsTest(allRows.filter(s => s.is_test).map(toHistoryItem));
       setLoading(false);
     }
     load();
@@ -176,12 +181,18 @@ export default function HistoryPage() {
     setDeleting(null);
   }, [supabase, deleting]);
 
+  /* ── 현재 탭 데이터 ── */
+  const activeItems = useMemo(
+    () => histTab === "user" ? items : itemsTest,
+    [histTab, items, itemsTest]
+  );
+
   /* ── 전략별 성과 ── */
   const strategyStats = useMemo(() => {
-    const completed = items.filter(it => it.draw !== null);
+    const completed = activeItems.filter(it => it.draw !== null);
     if (completed.length === 0) return [];
     const byMethod: Record<string, { count: number; matches: number[]; wins: number; category: string }> = {};
-    completed.forEach(it => {
+    completed.forEach((it: HistoryItem) => {
       const m = it.saved.method;
       if (!byMethod[m]) byMethod[m] = { count: 0, matches: [], wins: 0, category: it.saved.category };
       byMethod[m].count++;
@@ -199,22 +210,22 @@ export default function HistoryPage() {
         wins: d.wins,
       }))
       .sort((a, b) => b.avgMatch - a.avgMatch || b.bestMatch - a.bestMatch);
-  }, [items]);
+  }, [activeItems]);
 
   /* ── 집계 ── */
   const stats = useMemo(() => {
-    const bought      = items.filter(it => it.saved.purchased);
+    const bought      = activeItems.filter(it => it.saved.purchased);
     const totalInvest = bought.length * 1000;
     const totalReturn = bought.reduce((s, it) => s + it.prizeAmount, 0);
     const highPrize   = bought.filter(it => ["1등","2등","3등"].includes(it.prize));
-    const pendingCount = items.filter(it => it.draw === null).length;
-    const hitCount     = items.filter(it => it.matchCount >= 3).length;
+    const pendingCount = activeItems.filter(it => it.draw === null).length;
+    const hitCount     = activeItems.filter(it => it.matchCount >= 3).length;
     const boughtCount  = bought.length;
     return { totalInvest, totalReturn, highPrize, pendingCount, hitCount, boughtCount };
-  }, [items]);
+  }, [activeItems]);
 
   /* ── 필터 ── */
-  const filtered = items.filter(it => {
+  const filtered = activeItems.filter(it => {
     if (filter === "pending") return it.draw === null;
     if (filter === "bought")  return it.saved.purchased;
     if (filter === "hit")     return it.matchCount >= 3;
@@ -226,17 +237,36 @@ export default function HistoryPage() {
     <div className="px-4 py-5 md:px-6 lg:px-8 max-w-2xl mx-auto">
 
       {/* 헤더 */}
-      <div className="mb-5">
+      <div className="mb-4">
         <h1 className="text-xl font-extrabold text-gray-800">📋 구매 기록</h1>
         <p className="text-sm text-gray-400 mt-1">저장한 번호 · 구매 체크 · 당첨 결과</p>
       </div>
 
+      {/* 탭: 사용자 구매 / 테스트 */}
+      {!loading && (items.length > 0 || itemsTest.length > 0) && (
+        <div className="flex gap-1 mb-4">
+          {(["user", "test"] as const).map(t => (
+            <button
+              key={t}
+              onClick={() => setHistTab(t)}
+              className={`text-xs px-3 py-1.5 rounded-full font-semibold transition-colors ${
+                histTab === t
+                  ? "bg-indigo-600 text-white"
+                  : "bg-gray-100 text-gray-500"
+              }`}
+            >
+              {t === "user" ? `사용자 구매 (${items.length})` : `테스트 (${itemsTest.length})`}
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* 요약 카드 */}
-      {!loading && items.length > 0 && (
+      {!loading && activeItems.length > 0 && (
         <>
           <div className="grid grid-cols-3 gap-2 mb-3">
             <div className="bg-white border border-gray-200 rounded-2xl p-3 text-center">
-              <p className="text-2xl font-extrabold text-gray-800">{items.length}</p>
+              <p className="text-2xl font-extrabold text-gray-800">{activeItems.length}</p>
               <p className="text-xs text-gray-400 mt-0.5">총 저장</p>
             </div>
             <div className="bg-white border border-gray-200 rounded-2xl p-3 text-center">
@@ -308,7 +338,7 @@ export default function HistoryPage() {
               {/* 상단 요약 */}
               <div className="px-4 py-3 bg-slate-50 border-b border-gray-100">
                 <p className="text-xs text-gray-500">
-                  추첨 완료된 <strong className="text-gray-800">{items.filter(it => it.draw !== null).length}게임</strong> 기준
+                  추첨 완료된 <strong className="text-gray-800">{activeItems.filter(it => it.draw !== null).length}게임</strong> 기준
                   {strategyStats[0] && (
                     <span className="ml-2 text-amber-600 font-bold">
                       🏆 최고: {strategyStats[0].method} (평균 {strategyStats[0].avgMatch}개)
@@ -366,7 +396,7 @@ export default function HistoryPage() {
               {/* 하단 안내 */}
               <div className="px-4 py-3 bg-gray-50 border-t border-gray-100">
                 <p className="text-[11px] text-gray-400 text-center">
-                  게임이 쌓일수록 신뢰도 올라감 · 현재 {items.filter(it=>it.draw!==null).length}게임 분석 완료
+                  게임이 쌓일수록 신뢰도 올라감 · 현재 {activeItems.filter(it=>it.draw!==null).length}게임 분석 완료
                 </p>
               </div>
             </div>
@@ -375,10 +405,10 @@ export default function HistoryPage() {
       )}
 
       {/* 필터 탭 */}
-      {!loading && items.length > 0 && (
+      {!loading && activeItems.length > 0 && (
         <div className="flex gap-1.5 mb-4 overflow-x-auto pb-1">
           {([
-            { key: "all",     label: `전체 ${items.length}` },
+            { key: "all",     label: `전체 ${activeItems.length}` },
             { key: "bought",  label: `구매완료 ${stats.boughtCount}` },
             { key: "pending", label: `대기중 ${stats.pendingCount}` },
             { key: "hit",     label: `적중 ${stats.hitCount}` },
@@ -422,7 +452,7 @@ export default function HistoryPage() {
       )}
 
       {/* 비어있음 — 로그인은 했지만 번호 없음 */}
-      {!loading && isLoggedIn === true && items.length === 0 && (
+      {!loading && isLoggedIn === true && activeItems.length === 0 && (
         <div className="text-center py-16 text-gray-400">
           <div className="text-4xl mb-3">🎲</div>
           <p className="text-sm font-semibold text-gray-500">저장된 번호가 없어요</p>
@@ -431,7 +461,7 @@ export default function HistoryPage() {
       )}
 
       {/* 구매완료 힌트 — 로그인했고 번호 있지만 구매완료 0개 */}
-      {!loading && isLoggedIn === true && items.length > 0 && stats.boughtCount === 0 && (
+      {!loading && isLoggedIn === true && activeItems.length > 0 && stats.boughtCount === 0 && histTab === "user" && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 mb-4">
           <p className="text-xs text-amber-700 font-semibold">
             💡 <strong>구매현황·손익</strong>은 각 번호에서 <strong>"구매완료"</strong> 버튼을 눌러야 집계됩니다
@@ -559,7 +589,7 @@ export default function HistoryPage() {
         })}
       </div>
 
-      {filtered.length === 0 && !loading && items.length > 0 && (
+      {filtered.length === 0 && !loading && activeItems.length > 0 && (
         <div className="text-center py-10 text-gray-400 text-sm">
           해당 조건의 항목이 없어요
         </div>

@@ -835,6 +835,15 @@ const DEFAULT_KEYS: MethodKey[] = [
   "pattern", "balance",
 ];
 
+// 테스트 모드: fav 제외 모든 패턴
+const ALL_TEST_KEYS: MethodKey[] = [
+  "bayes", "bayes_overdue",
+  "hot", "cold", "pairs", "carryover", "norepeat", "overdue", "recent20", "recent10",
+  "tail_diversity", "overdue_pick", "triple_common", "hot_recent",
+  "pattern", "hot_pattern", "cold_pattern", "ac", "prime", "midbias", "golden_zone", "golden_combo",
+  "random", "balance", "section", "ending", "spread", "zone_balance",
+];
+
 function runGenerator(key: MethodKey, draws: DrawRow[], bayesStats?: BayesStat[], favorites?: number[], usedNumbers?: Set<number>): Six {
   switch (key) {
     case "fav":          return genFavorites(favorites ?? []);
@@ -1144,6 +1153,8 @@ export default function GeneratePage() {
   const [copied,    setCopied]  = useState<number | null>(null);
   const [isMom,     setIsMom]   = useState(false);
   const [showMom,   setShowMom] = useState(false);
+  const [testBusy,  setTestBusy]  = useState(false);
+  const [testMsg,   setTestMsg]   = useState<string | null>(null);
   const [userId,    setUserId]  = useState<string | null>(null);
   const [savedSets, setSavedSets] = useState<Set<number>>(new Set());
   const [boughtSets, setBoughtSets] = useState<Set<number>>(new Set());
@@ -1340,6 +1351,37 @@ export default function GeneratePage() {
     }
   }, [userId, nextDrawNo, supabase]);
 
+  /* 100회 테스트 — 모든 패턴 순환, is_test: true */
+  const runTestMode = useCallback(async () => {
+    if (!userId || !nextDrawNo || testBusy) return;
+    setTestBusy(true);
+    setTestMsg("테스트 번호 생성 중...");
+    const usedNums = new Set<number>();
+    const rows = Array.from({ length: 100 }, (_, i) => {
+      const key = ALL_TEST_KEYS[i % ALL_TEST_KEYS.length];
+      const m = METHODS[key];
+      const numbers = runGenerator(key, draws, bayesStats, [], usedNums);
+      return {
+        user_id: userId,
+        draw_no: nextDrawNo,
+        numbers,
+        method: m.label,
+        category: m.category,
+        set_idx: i + 1,
+        is_test: true,
+      };
+    });
+    // 10개씩 나눠서 insert (Supabase limit 대비)
+    for (let i = 0; i < rows.length; i += 10) {
+      const chunk = rows.slice(i, i + 10);
+      await supabase.from("saved_numbers").insert(chunk);
+      setTestMsg(`저장 중... ${Math.min(i + 10, 100)}/100`);
+    }
+    setTestBusy(false);
+    setTestMsg(`✅ ${nextDrawNo}회 테스트 100세트 저장 완료!`);
+    setTimeout(() => setTestMsg(null), 4000);
+  }, [userId, nextDrawNo, draws, bayesStats, supabase, testBusy]);
+
   const updateSetCount = (n: number) => {
     setSetCount(n);
     setMethodKeys(() => {
@@ -1452,6 +1494,26 @@ export default function GeneratePage() {
                 : "bg-gray-100 text-gray-500 hover:bg-gray-200"}`}>
             🧧 어머니
           </button>
+        </div>
+      )}
+
+      {/* 100회 테스트 버튼 (관리자 전용) */}
+      {isMom && (
+        <div className="mb-4 bg-slate-800 rounded-2xl p-4">
+          <p className="text-xs text-slate-400 mb-2 font-semibold">🧪 전략 성능 테스트 (관리자 전용)</p>
+          <p className="text-[11px] text-slate-500 mb-3">
+            {ALL_TEST_KEYS.length}개 패턴 순환 × 100세트 → 테스트 데이터로 저장 (선호번호 제외)
+          </p>
+          <button
+            onClick={runTestMode}
+            disabled={testBusy || !nextDrawNo}
+            className="w-full py-2.5 rounded-xl text-sm font-bold bg-indigo-600 text-white disabled:opacity-50 hover:bg-indigo-500 transition-colors"
+          >
+            {testBusy ? testMsg : `🧪 ${nextDrawNo}회 100세트 테스트 생성`}
+          </button>
+          {testMsg && !testBusy && (
+            <p className="text-xs text-emerald-400 font-semibold mt-2 text-center">{testMsg}</p>
+          )}
         </div>
       )}
 

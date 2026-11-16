@@ -318,6 +318,8 @@ export default function ReportPage() {
   const supabase = useMemo(() => createClient(), []);
   const [loading, setLoading] = useState(true);
   const [judged, setJudged] = useState<Judged[]>([]);
+  const [judgedTest, setJudgedTest] = useState<Judged[]>([]);
+  const [stratTab, setStratTab] = useState<"real" | "test">("real");
   const [pending, setPending] = useState(0);
   const [draws, setDraws] = useState<DrawRow[]>([]);
   const [drawNoOf, setDrawNoOf] = useState<Map<string, number>>(new Map());
@@ -366,20 +368,23 @@ export default function ReportPage() {
         setUserId(user.id);
         const { data: saved } = await supabase
           .from("saved_numbers")
-          .select("id,draw_no,numbers,method,category,purchased")
+          .select("id,draw_no,numbers,method,category,purchased,is_test")
           .eq("user_id", user.id);
         const drawMap = new Map(all.map(d => [d.draw_no, d]));
-        const rows = (saved ?? []) as SavedRow[];
+        const rows = (saved ?? []) as (SavedRow & { is_test: boolean })[];
         const out: Judged[] = [];
+        const outTest: Judged[] = [];
         let pend = 0;
         const m = new Map<string, number>();
         rows.forEach(s => {
           const d = drawMap.get(s.draw_no);
-          if (!d) { pend++; return; }
-          out.push(judge(s, d));
-          m.set(s.id, s.draw_no);
+          if (!d) { if (!s.is_test) pend++; return; }
+          const j = judge(s, d);
+          if (s.is_test) outTest.push(j);
+          else { out.push(j); m.set(s.id, s.draw_no); }
         });
         setJudged(out);
+        setJudgedTest(outTest);
         setPending(pend);
         setDrawNoOf(m);
       }
@@ -415,6 +420,23 @@ export default function ReportPage() {
       })
       .sort((a, b) => b.n - a.n);
   }, [judged]);
+
+  /* ── 전략별 (테스트 데이터) ── */
+  const byMethodTest = useMemo(() => {
+    const m: Record<string, { category: string; matches: number[] }> = {};
+    judgedTest.forEach(j => {
+      const k = j.saved.method;
+      if (!m[k]) m[k] = { category: j.saved.category, matches: [] };
+      m[k].matches.push(j.match);
+    });
+    return Object.entries(m)
+      .map(([method, d]) => {
+        const n = d.matches.length;
+        const avg = d.matches.reduce((a, b) => a + b, 0) / n;
+        return { method, category: d.category, n, avg, best: Math.max(...d.matches), v: verdict(n, avg) };
+      })
+      .sort((a, b) => b.n - a.n);
+  }, [judgedTest]);
 
   /* ── 구매 손익 (구매완료 체크한 것만) ── */
   const money = useMemo(() => {
@@ -661,14 +683,30 @@ export default function ReportPage() {
           {/* 전략별 */}
           <section className="bg-white border border-gray-200 rounded-2xl p-4 mb-4">
             <h2 className="text-sm font-extrabold text-gray-800 mb-1">② 전략별 성적 (기준선 비교)</h2>
-            <p className="text-[11px] text-gray-400 mb-3">
+            <p className="text-[11px] text-gray-400 mb-2">
               30게임 미만은 아직 판단하기 이르고, 평균 수준이면 운의 범위 안이라는 뜻이에요.
             </p>
-            {byMethod.length === 0 ? (
+            {/* 탭 */}
+            <div className="flex gap-1 mb-3">
+              {(["real", "test"] as const).map(t => (
+                <button
+                  key={t}
+                  onClick={() => setStratTab(t)}
+                  className={`text-xs px-3 py-1 rounded-full font-semibold transition-colors ${
+                    stratTab === t
+                      ? "bg-indigo-600 text-white"
+                      : "bg-gray-100 text-gray-500"
+                  }`}
+                >
+                  {t === "real" ? "내 구매" : "테스트"}
+                </button>
+              ))}
+            </div>
+            {(stratTab === "real" ? byMethod : byMethodTest).length === 0 ? (
               <p className="text-xs text-gray-400">데이터가 없어요.</p>
             ) : (
               <div className="divide-y divide-gray-50">
-                {byMethod.map(s => (
+                {(stratTab === "real" ? byMethod : byMethodTest).map(s => (
                   <div key={s.method} className="py-2.5 flex items-center gap-2">
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-bold text-gray-800 truncate">{s.method}</p>
