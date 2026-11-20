@@ -1351,13 +1351,13 @@ export default function GeneratePage() {
     }
   }, [userId, nextDrawNo, supabase]);
 
-  /* 100회 테스트 — 모든 패턴 순환, is_test: true */
+  /* 1000회 테스트 — 모든 패턴 순환, is_test: true */
   const runTestMode = useCallback(async () => {
     if (!userId || !nextDrawNo || testBusy) return;
     setTestBusy(true);
     setTestMsg("테스트 번호 생성 중...");
     const usedNums = new Set<number>();
-    const rows = Array.from({ length: 100 }, (_, i) => {
+    const rows = Array.from({ length: 1000 }, (_, i) => {
       const key = ALL_TEST_KEYS[i % ALL_TEST_KEYS.length];
       const m = METHODS[key];
       const numbers = runGenerator(key, draws, bayesStats, [], usedNums);
@@ -1371,14 +1371,14 @@ export default function GeneratePage() {
         is_test: true,
       };
     });
-    // 10개씩 나눠서 insert (Supabase limit 대비)
-    for (let i = 0; i < rows.length; i += 10) {
-      const chunk = rows.slice(i, i + 10);
+    // 50개씩 나눠서 insert (Supabase limit 대비)
+    for (let i = 0; i < rows.length; i += 50) {
+      const chunk = rows.slice(i, i + 50);
       await supabase.from("saved_numbers").insert(chunk);
-      setTestMsg(`저장 중... ${Math.min(i + 10, 100)}/100`);
+      setTestMsg(`저장 중... ${Math.min(i + 50, 1000)}/1000`);
     }
     setTestBusy(false);
-    setTestMsg(`✅ ${nextDrawNo}회 테스트 100세트 저장 완료!`);
+    setTestMsg(`✅ ${nextDrawNo}회 테스트 1000세트 저장 완료!`);
     setTimeout(() => setTestMsg(null), 4000);
   }, [userId, nextDrawNo, draws, bayesStats, supabase, testBusy]);
 
@@ -1502,14 +1502,14 @@ export default function GeneratePage() {
         <div className="mb-4 bg-slate-800 rounded-2xl p-4">
           <p className="text-xs text-slate-200 mb-2 font-semibold">🧪 전략 성능 테스트 (관리자 전용)</p>
           <p className="text-[11px] text-slate-300 mb-3">
-            {ALL_TEST_KEYS.length}개 패턴 순환 × 100세트 → 테스트 데이터로 저장 (선호번호 제외)
+            {ALL_TEST_KEYS.length}개 패턴 순환 × 1000세트 → 테스트 데이터로 저장 (선호번호 제외)
           </p>
           <button
             onClick={runTestMode}
             disabled={testBusy || !nextDrawNo}
             className="w-full py-2.5 rounded-xl text-sm font-bold bg-indigo-600 text-white disabled:opacity-50 hover:bg-indigo-500 transition-colors"
           >
-            {testBusy ? testMsg : `🧪 ${nextDrawNo}회 100세트 테스트 생성`}
+            {testBusy ? testMsg : `🧪 ${nextDrawNo}회 1000세트 테스트 생성`}
           </button>
           {testMsg && !testBusy && (
             <p className="text-xs text-emerald-400 font-semibold mt-2 text-center">{testMsg}</p>
