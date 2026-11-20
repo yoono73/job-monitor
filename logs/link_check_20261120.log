@@ -1,7 +1,2 @@
-OK    [서울특별시 강북구 보건소] 서울특별시 강북구 일반임기제공무원(치과위생사) 경력경쟁임용시험  → https://www.gangbuk.go.kr/health/bbs/B0000208/view.do?menuNo=400125&amp;nttId=18
-OK    [서울특별시 강북구 보건소] 서울특별시 강북구 일반임기제공무원(진료의사) 경력경쟁임용시험 공 → https://www.gangbuk.go.kr/health/bbs/B0000208/view.do?menuNo=400125&amp;nttId=18
-FAIL  [경기도 고양시] 2026년도 제2회 고양시 개방형직위(일산동구·일산서구보건소장) → https://www.goyang.go.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1082&amp;q_bbsct
-SKIP  [대법원 법원행정처] url=None 이미 처리됨
-FAIL  [부마민주항쟁진상규명및관련자명예회복심의] 부마민주항쟁진상규명위원회 전문임기제(나급) 채용 공고 → https://www.buma.go.kr/
-SKIP  [산림청 국립수목원] url=None 이미 처리됨
-FAIL  [국토교통부] 서울지방국토관리청 공무직 근로자(사무보조원) 공개경쟁채용 공고 → https://www.kric.go.kr/jsp/employment/org/recruitDetail.jsp?board_seq=5630
+OK    [서울올림픽기념국민체육진흥공단] 서울올림픽기념국민체육진흥공단 지원직(투표권불법관리) 채용공고 → https://kspo.or.kr/kspo/singl/empmn/view.do?empmnId=780&menuNo=200186&pageIndex=
+SKIP  [외교부] url=None 이미 처리됨
