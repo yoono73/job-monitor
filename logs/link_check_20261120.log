@@ -1,5 +1,7 @@
-OK    [한국토지주택공사] 한국토지주택공사 개방형 직위 공모 → https://www.lh.or.kr/board.es?mid=a10602040000&bid=0035&list_no=735238&act=view
-OK    [경기도 구리시] 2026년도 제7회 구리시 지방임기제공무원 채용시험 시행계획 재 → https://www.guri.go.kr/www/selectBbsNttView.do?key=389&amp;bbsNo=41&amp;nttNo=15
-OK    [경기도 김포시] 김포시 감사관（개방형직위） 임용시험 시행 공고 → https://www.gimpo.go.kr/portal/selectBbsNttView.do?key=1007&amp;bbsNo=288&amp;se
-SKIP  [조달청] url=None 이미 처리됨
-SKIP  [과학기술정보통신부 우정사업본부] url=None 이미 처리됨
+OK    [서울특별시 강북구 보건소] 서울특별시 강북구 일반임기제공무원(치과위생사) 경력경쟁임용시험  → https://www.gangbuk.go.kr/health/bbs/B0000208/view.do?menuNo=400125&amp;nttId=18
+OK    [서울특별시 강북구 보건소] 서울특별시 강북구 일반임기제공무원(진료의사) 경력경쟁임용시험 공 → https://www.gangbuk.go.kr/health/bbs/B0000208/view.do?menuNo=400125&amp;nttId=18
+FAIL  [경기도 고양시] 2026년도 제2회 고양시 개방형직위(일산동구·일산서구보건소장) → https://www.goyang.go.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1082&amp;q_bbsct
+SKIP  [대법원 법원행정처] url=None 이미 처리됨
+FAIL  [부마민주항쟁진상규명및관련자명예회복심의] 부마민주항쟁진상규명위원회 전문임기제(나급) 채용 공고 → https://www.buma.go.kr/
+SKIP  [산림청 국립수목원] url=None 이미 처리됨
+FAIL  [국토교통부] 서울지방국토관리청 공무직 근로자(사무보조원) 공개경쟁채용 공고 → https://www.kric.go.kr/jsp/employment/org/recruitDetail.jsp?board_seq=5630
