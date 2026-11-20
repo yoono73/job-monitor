@@ -252,6 +252,20 @@ export default function StatsPage() {
   const [patternTab, setPatternTab] = useState<"sum" | "odd" | "sec" | "con" | "end">("sum");
   const [heatmapMode, setHeatmapMode] = useState<"50" | "100" | "200" | "common">("50");
 
+  /* ─── 나의 번호 성적 ─── */
+  interface MyNumberRow {
+    id: number;
+    draw_no: number;
+    numbers: number[];
+    strategy: string | null;
+    is_test: boolean;
+    matched_count: number | null;
+    prize_rank: number | null;
+    checked_draw_no: number | null;
+  }
+  const [myNumbers, setMyNumbers] = useState<MyNumberRow[]>([]);
+  const [myTestNumbers, setMyTestNumbers] = useState<MyNumberRow[]>([]);
+
   /* ─── 추천 이력 ─── */
   interface RecommendHistory {
     id: number;
@@ -288,6 +302,31 @@ export default function StatsPage() {
       .order("id", { ascending: true })
       .then(({ data }) => { if (data) setAllWins(data as RecommendHistory[]); });
   }, [supabase]);
+
+  useEffect(() => {
+    const fetchMyNumbers = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const cols = "id,draw_no,numbers,strategy,is_test,matched_count,prize_rank,checked_draw_no";
+      const [{ data: real }, { data: test }] = await Promise.all([
+        supabase.from("saved_numbers").select(cols).eq("is_test", false).not("checked_draw_no", "is", null).order("draw_no", { ascending: false }),
+        supabase.from("saved_numbers").select(cols).eq("is_test", true).not("checked_draw_no", "is", null).order("draw_no", { ascending: false }),
+      ]);
+      if (real) setMyNumbers(real as MyNumberRow[]);
+      if (test) setMyTestNumbers(test as MyNumberRow[]);
+    };
+    fetchMyNumbers();
+  }, [supabase]);
+
+  const deleteHistory = async (id: number) => {
+    const { error } = await supabase.from("recommendation_history").delete().eq("id", id);
+    if (!error) {
+      setHistory(prev => prev.filter(h => h.id !== id));
+      setAllWins(prev => prev.filter(h => h.id !== id));
+      setHistoryMsg("삭제됐어요 ✓");
+      setTimeout(() => setHistoryMsg(null), 2000);
+    }
+  };
 
   const saveHistoryResult = async (id: number, rank: number | null) => {
     const amount = rank ? [0, 0, 0, 0, 50000, 5000][rank] ?? 0 : 0;
@@ -763,6 +802,28 @@ export default function StatsPage() {
     }).sort((a,b)=>b.score-a.score);
   }, [draws]);
 
+  /* ─── 나의 번호 성적 집계 ─── */
+  const myNumberStats = useMemo(() => {
+    const calc = (rows: MyNumberRow[]) => {
+      if (rows.length === 0) return null;
+      const dist = [0, 0, 0, 0, 0, 0, 0]; // matched_count 0~6
+      let bestRank: number | null = null;
+      const stratMap: Record<string, { total: number; best: number }> = {};
+      rows.forEach(r => {
+        const m = r.matched_count ?? 0;
+        if (m >= 0 && m <= 6) dist[m]++;
+        if (r.prize_rank !== null && (bestRank === null || r.prize_rank < bestRank)) bestRank = r.prize_rank;
+        const s = r.strategy ?? "기타";
+        if (!stratMap[s]) stratMap[s] = { total: 0, best: 0 };
+        stratMap[s].total++;
+        if (m > stratMap[s].best) stratMap[s].best = m;
+      });
+      const threeOrMore = dist[3] + dist[4] + dist[5] + dist[6];
+      return { total: rows.length, dist, threeOrMore, bestRank, stratMap };
+    };
+    return { real: calc(myNumbers), test: calc(myTestNumbers) };
+  }, [myNumbers, myTestNumbers]);
+
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] gap-3">
@@ -791,6 +852,80 @@ export default function StatsPage() {
 
   return (
     <div className="px-4 py-5 md:px-6 lg:px-8 max-w-3xl mx-auto">
+
+      {/* ── 🏅 나의 번호 성적 분析 ── */}
+      {(myNumberStats.real || myNumberStats.test) && (() => {
+        const STRAT_LABEL: Record<string, string> = {
+          condition_filter: '조건필터', golden_range: '황금구간',
+          number_pair: '번호쌍', preferred: '선호번호',
+          distribution: '분산추천', tail_diversity: '끝자리',
+          long_absent: '공백', bayesian: '베이지안',
+        };
+        type MyStats = { total: number; dist: number[]; threeOrMore: number; bestRank: number | null; stratMap: Record<string, { total: number; best: number }> } | null;
+        const renderStats = (s: MyStats, label: string, accent: string) => {
+          if (!s) return null;
+          const maxDist = Math.max(...s.dist);
+          const matchColors = ['bg-gray-200','bg-gray-200','bg-gray-200','bg-emerald-400','bg-blue-500','bg-orange-500','bg-yellow-400'];
+          const matchTextColors = ['text-gray-400','text-gray-400','text-gray-400','text-emerald-700','text-blue-700','text-orange-700','text-yellow-700'];
+          return (
+            <div className="mb-4">
+              <p className="text-[11px] font-bold text-gray-500 mb-2">{label}</p>
+              {/* 요약 카드 3개 */}
+              <div className="grid grid-cols-3 gap-2 mb-3">
+                <div className="bg-gray-50 rounded-xl p-2.5 text-center">
+                  <p className="text-[10px] text-gray-400 mb-0.5">판정 세트</p>
+                  <p className={`text-lg font-extrabold ${accent}`}>{s.total.toLocaleString()}</p>
+                </div>
+                <div className="bg-gray-50 rounded-xl p-2.5 text-center">
+                  <p className="text-[10px] text-gray-400 mb-0.5">3개+ 적중</p>
+                  <p className={`text-lg font-extrabold ${s.threeOrMore > 0 ? "text-emerald-600" : "text-gray-400"}`}>
+                    {s.threeOrMore}
+                    {s.total > 0 && <span className="text-[10px] text-gray-400 font-normal ml-0.5">({(s.threeOrMore/s.total*100).toFixed(1)}%)</span>}
+                  </p>
+                </div>
+                <div className="bg-gray-50 rounded-xl p-2.5 text-center">
+                  <p className="text-[10px] text-gray-400 mb-0.5">최고 등수</p>
+                  <p className={`text-lg font-extrabold ${s.bestRank === 1 ? "text-yellow-600" : s.bestRank === 2 ? "text-orange-600" : s.bestRank === 3 ? "text-rose-600" : s.bestRank !== null ? "text-blue-600" : "text-gray-300"}`}>
+                    {s.bestRank !== null ? `${s.bestRank}등` : "-"}
+                  </p>
+                </div>
+              </div>
+              {/* 적중 분포 */}
+              <div className="space-y-1">
+                {[6,5,4,3,2,1,0].map(m => (
+                  s.dist[m] > 0 || m >= 3 ? (
+                    <div key={m} className="flex items-center gap-2">
+                      <span className={`text-[10px] font-bold w-6 shrink-0 ${matchTextColors[m]}`}>{m}개</span>
+                      <div className="flex-1 h-3 bg-gray-100 rounded-full overflow-hidden">
+                        <div className={`h-full rounded-full ${matchColors[m]}`}
+                          style={{ width: `${maxDist > 0 ? (s.dist[m]/maxDist)*100 : 0}%`, minWidth: s.dist[m] > 0 ? '4px' : '0' }} />
+                      </div>
+                      <span className={`text-[10px] font-semibold w-8 text-right shrink-0 ${s.dist[m] > 0 ? matchTextColors[m] : "text-gray-200"}`}>
+                        {s.dist[m]}
+                      </span>
+                    </div>
+                  ) : null
+                ))}
+              </div>
+            </div>
+          );
+        };
+
+        return (
+          <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 mb-5">
+            <div className="flex items-center gap-2 mb-4">
+              <span className="text-xl">🏅</span>
+              <h3 className="text-sm font-bold text-gray-800">나의 번호 성적 분析</h3>
+              <span className="text-[10px] bg-indigo-100 text-indigo-700 font-bold px-2 py-0.5 rounded-full ml-auto">
+                판정완료 기준
+              </span>
+            </div>
+            {renderStats(myNumberStats.real, "🧑 내 구매 세트", "text-indigo-600")}
+            {myNumberStats.test && renderStats(myNumberStats.test, "🧪 테스트 세트 (is_test)", "text-purple-600")}
+            <p className="text-[9px] text-gray-300 mt-1 text-center">* checked_draw_no가 있는 세트만 집계됩니다</p>
+          </div>
+        );
+      })()}
 
       {/* ── 🏆 패턴별 당첨 이력 ── */}
       {(() => {
@@ -821,6 +956,17 @@ export default function StatsPage() {
 
         if (total === 0) return null;
 
+        // 전략별 누적 순번 계산 (오래된 것부터 1회, 2회, 3회...)
+        // 같은 회차 내에서는 id DESC → 화면에서 위(id 작은 것)가 높은 누적 횟수를 받도록
+        const winsAsc = [...wins].sort((a, b) => a.draw_no - b.draw_no || b.id - a.id);
+        const stratCountMap: Record<string, number> = {};
+        const stratCumByIdMap: Record<number, number> = {};
+        winsAsc.forEach(w => {
+          const key = stratLabel(w.strategy);
+          stratCountMap[key] = (stratCountMap[key] || 0) + 1;
+          stratCumByIdMap[w.id] = stratCountMap[key];
+        });
+
         return (
           <div className="bg-white border border-gray-200 rounded-2xl p-4 mb-5 shadow-sm">
             <h3 className="text-sm font-extrabold text-gray-800 mb-1 flex items-center gap-1.5">
@@ -831,23 +977,22 @@ export default function StatsPage() {
             <p className="text-[10px] text-gray-400 mb-3">어떤 전략이 적중했는지 확인하고 패턴 선택에 참고하세요</p>
 
             {/* 헤더 행 */}
-            <div className="grid grid-cols-[42px_36px_1fr_52px_24px] gap-x-1.5 mb-1 px-1.5">
+            <div className="grid grid-cols-[40px_32px_1fr] gap-x-1.5 mb-1 px-1.5">
               <span className="text-[10px] font-bold text-gray-400">회차</span>
               <span className="text-[10px] font-bold text-gray-400">등수</span>
-              <span className="text-[10px] font-bold text-gray-400">번호</span>
-              <span className="text-[10px] font-bold text-gray-400">패턴</span>
-              <span className="text-[10px] font-bold text-gray-400 text-right">#</span>
+              <span className="text-[10px] font-bold text-gray-400">번호 · 패턴 · 누적</span>
             </div>
 
             <div className="space-y-1.5">
-              {wins.map((w, idx) => {
+              {wins.map((w) => {
                 const nums6 = Array.isArray(w.numbers) ? (w.numbers as number[]) : [];
                 const hasNums = nums6.length === 6 && nums6.some(n => n > 0);
                 const { text: rankText, cls: rankCls } = rankBadge(w.prize_rank, w.matched_count);
-                const cumCount = total - idx;
+                const label = stratLabel(w.strategy);
+                const stratCumCount = stratCumByIdMap[w.id] ?? 1;
 
                 return (
-                  <div key={w.id} className="grid grid-cols-[42px_36px_1fr_52px_24px] gap-x-1.5 items-center bg-gray-50 rounded-xl px-1.5 py-2 border border-gray-100">
+                  <div key={w.id} className="grid grid-cols-[40px_32px_1fr] gap-x-1.5 items-center bg-gray-50 rounded-xl px-1.5 py-2 border border-gray-100">
                     {/* 회차 */}
                     <span className="text-[11px] font-bold text-gray-700 leading-none">{w.draw_no}회</span>
 
@@ -856,21 +1001,24 @@ export default function StatsPage() {
                       {rankText}
                     </span>
 
-                    {/* 번호 */}
-                    <div className="flex gap-0.5 flex-wrap">
+                    {/* 번호 · 패턴 · 누적 · 삭제 — 한 줄 */}
+                    <div className="flex items-center gap-1.5 flex-wrap">
                       {hasNums
                         ? nums6.map((n, i) => <Ball key={i} n={n} size="sm" />)
-                        : <span className="text-[10px] text-gray-400 italic self-center">미기록</span>
+                        : <span className="text-[10px] text-gray-400 italic">미기록</span>
                       }
+                      <span className="text-[10px] font-semibold text-indigo-700 bg-indigo-50 rounded px-1.5 py-0.5 leading-none shrink-0">
+                        {label}
+                      </span>
+                      <span className="text-[11px] font-extrabold text-amber-600 leading-none shrink-0">
+                        누적<span className="text-[13px] ml-0.5">{stratCumCount}</span>회
+                      </span>
+                      <button
+                        onClick={() => { if (confirm(`${w.draw_no}회 ${label} 기록을 삭제할까요?`)) deleteHistory(w.id); }}
+                        className="text-[10px] text-gray-300 hover:text-red-500 transition-colors leading-none shrink-0 ml-auto"
+                        title="삭제"
+                      >✕</button>
                     </div>
-
-                    {/* 패턴 */}
-                    <span className="text-[10px] font-semibold text-indigo-700 bg-indigo-50 rounded px-1 py-0.5 text-center truncate leading-none">
-                      {stratLabel(w.strategy)}
-                    </span>
-
-                    {/* 횟수 (누적) */}
-                    <span className="text-[11px] font-extrabold text-gray-500 text-right leading-none">{cumCount}</span>
                   </div>
                 );
               })}

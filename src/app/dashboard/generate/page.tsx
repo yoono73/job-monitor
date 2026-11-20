@@ -1500,8 +1500,8 @@ export default function GeneratePage() {
       {/* 100회 테스트 버튼 (관리자 전용) */}
       {isMom && (
         <div className="mb-4 bg-slate-800 rounded-2xl p-4">
-          <p className="text-xs text-slate-400 mb-2 font-semibold">🧪 전략 성능 테스트 (관리자 전용)</p>
-          <p className="text-[11px] text-slate-500 mb-3">
+          <p className="text-xs text-slate-200 mb-2 font-semibold">🧪 전략 성능 테스트 (관리자 전용)</p>
+          <p className="text-[11px] text-slate-300 mb-3">
             {ALL_TEST_KEYS.length}개 패턴 순환 × 100세트 → 테스트 데이터로 저장 (선호번호 제외)
           </p>
           <button
