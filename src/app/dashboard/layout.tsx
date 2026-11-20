@@ -129,7 +129,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       {/* ── 업데이트 공지 배너 ── */}
       <div className="bg-gradient-to-r from-violet-600 to-indigo-600 text-white text-xs font-semibold px-4 py-2 flex items-center justify-center gap-2 flex-wrap">
         <span className="bg-white text-violet-700 text-[9px] font-extrabold px-1.5 py-0.5 rounded-full shrink-0 animate-pulse">NEW</span>
-        <span>🎉 v2.4 업데이트: 1~1249회 전체 분석 기반 신규 전략 3개 추가 — <strong>저중고균형 · 최근핫번호 · 황금필터강화</strong> (번호 생성 → 전략 선택에서 확인)</span>
+        <span>🏅 v2.8 업데이트: 나의 번호 성적 분석 추가 (통계 페이지) + 100세트 테스트 시뮬레이션 기능 추가</span>
       </div>
 
       {/* 본문 */}

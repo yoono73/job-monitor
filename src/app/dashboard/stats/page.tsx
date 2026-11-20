@@ -1161,7 +1161,6 @@ export default function StatsPage() {
         <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 mb-5">
           <h3 className="text-xs font-bold text-gray-700 mb-1 flex items-center gap-1.5">
             <span>📈</span> 최근 50회 — 10회 단위 추세 분석
-            <span className="bg-cyan-100 text-cyan-600 text-[9px] font-extrabold px-1.5 py-0.5 rounded-full ml-1">NEW</span>
           </h3>
           <p className="text-[10px] text-gray-400 mb-3 bg-cyan-50 rounded-lg px-3 py-2">
             <span className="text-cyan-600 font-bold">💡 흐름 파악:</span> 최근 50회를 10회씩 묶어 합계/홀수/구간 평균 추세를 봅니다. 최신 블록이 오른쪽.
@@ -1398,7 +1397,6 @@ export default function StatsPage() {
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-xs font-bold text-gray-700 flex items-center gap-1.5">
               <span>🔥</span> 최근 회차 번호 히트맵
-              <span className="bg-orange-100 text-orange-600 text-[9px] font-extrabold px-1.5 py-0.5 rounded-full ml-1">NEW</span>
             </h3>
             <div className="flex gap-1">
               {(["50","100","200"] as const).map(m => (
@@ -1562,7 +1560,6 @@ export default function StatsPage() {
         <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 mb-5">
           <h3 className="text-xs font-bold text-gray-700 mb-1 flex items-center gap-1.5">
             <span>📅</span> 번호별 최근 20회 출현 타임라인
-            <span className="bg-indigo-100 text-indigo-600 text-[9px] font-extrabold px-1.5 py-0.5 rounded-full ml-1">NEW</span>
           </h3>
           <p className="text-[10px] text-gray-400 mb-3 bg-indigo-50 rounded-lg px-3 py-2">
             <span className="text-indigo-600 font-bold">💡 읽는 법:</span> 각 행 = 번호(1~45), 각 점 = 회차(왼쪽=오래됨→오른쪽=최신). <span className="font-semibold text-indigo-700">●채움</span>=출현, ○=미출현. 오른쪽 숫자는 현재 연속 미출현 횟수.
@@ -1622,17 +1619,15 @@ export default function StatsPage() {
         <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 mb-5">
           <h3 className="text-xs font-bold text-gray-700 mb-1 flex items-center gap-1.5">
             <span>🧪</span> 전략 백테스팅
-            <span className="bg-rose-500 text-white text-[9px] font-extrabold px-1.5 py-0.5 rounded-full ml-1">NEW</span>
           </h3>
           <p className="text-[10px] text-gray-400 mb-2">
-            최근 <span className="font-bold text-gray-600">200회</span> walk-forward 시뮬레이션 — 각 회차 직전 데이터만으로 번호를 선택, 실제 당첨번호와 비교한 결과입니다.
-            <span className="text-amber-600 font-semibold"> 6개 중 몇 개 일치하는지</span>를 전략별로 집계합니다.
+            최근 <span className="font-bold text-gray-600">200회</span> 실제 당첨번호와 비교 — 각 전략이 번호를 맞힌 비율을 순위별로 보여줍니다.
+            <span className="text-amber-600 font-semibold"> 3개 이상 일치한 비율(%)</span>이 높을수록 역사적으로 성과가 좋은 전략입니다.
           </p>
           <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 mb-3 flex items-start gap-2">
             <span className="text-amber-500 text-sm shrink-0 mt-0.5">💡</span>
             <p className="text-[11px] text-amber-800 leading-relaxed">
-              <span className="font-bold">1위 전략을 직접 써보려면</span> → <span className="font-semibold text-indigo-700">생성 페이지</span>에서 세트 수를 1~5로 설정하고, 전략 선택창에서 해당 전략을 골라 생성하세요.
-              <br /><span className="text-amber-600">예) 1위 = 콜드번호 → 생성 페이지 전략 선택 → ❄️ 콜드번호 선택 → 생성하기</span>
+              <span className="font-bold">1위 전략 바로 사용하기</span> → <span className="font-semibold text-indigo-700">생성 페이지</span>에서 전략을 선택해 번호를 뽑으세요.
             </p>
           </div>
           <div className="space-y-2">
@@ -1685,7 +1680,6 @@ export default function StatsPage() {
         <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 mb-5">
           <h3 className="text-xs font-bold text-gray-700 mb-1 flex items-center gap-1.5">
             <span>🔢</span> 끝자리(일의 자리) 출현 편향
-            <span className="bg-violet-100 text-violet-600 text-[9px] font-extrabold px-1.5 py-0.5 rounded-full ml-1">NEW</span>
           </h3>
           <p className="text-[10px] text-gray-400 mb-3 bg-violet-50 rounded-lg px-3 py-2"><span className="text-violet-600 font-bold">💡 끝자리 편향이란?</span> 전체 {draws.length}회 기준으로, 1~45번 각각의 일의 자리(0~9) 출현 비율을 계산합니다. 이론상 균등하면 각 끝자리 10%이지만, 실제로는 편차가 있습니다. 끝자리 다양성 전략은 이 편차를 보정하여 6가지 끝자리가 고르게 분산된 조합을 생성합니다.</p>
           <div className="space-y-1.5">
@@ -1727,7 +1721,6 @@ export default function StatsPage() {
         <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 mb-5">
           <h3 className="text-xs font-bold text-gray-700 mb-1 flex items-center gap-1.5">
             <span>🥇</span> 합계 분포 × 황금구간 분석
-            <span className="bg-amber-100 text-amber-700 text-[9px] font-extrabold px-1.5 py-0.5 rounded-full ml-1">NEW</span>
           </h3>
           <p className="text-[10px] text-gray-400 mb-3">역대 {patternStats.total}회 당첨번호 합계 분포 · 황금구간 120~155 강조</p>
           <div className="space-y-1">
@@ -1945,7 +1938,6 @@ export default function StatsPage() {
         <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 mb-5">
           <h3 className="text-xs font-bold text-gray-700 mb-1 flex items-center gap-1.5">
             <span>🔄</span> 번호 출현 주기 불규칙성 분석
-            <span className="bg-teal-100 text-teal-600 text-[9px] font-extrabold px-1.5 py-0.5 rounded-full ml-1">NEW</span>
           </h3>
           <p className="text-[10px] text-gray-400 mb-3 bg-teal-50 rounded-lg px-3 py-2">
             <span className="text-teal-600 font-bold">💡 변동계수(CV) = 표준편차 ÷ 평균 주기.</span> 낮을수록 규칙적(예측 용이), 높을수록 불규칙(변덕스러운 번호). 단, 로또는 무작위이므로 참고용.
