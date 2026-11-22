@@ -44,6 +44,17 @@ interface PairStat {
   theoretical_prob: number;
 }
 
+interface NextRec {
+  id: number;
+  draw_no: number;
+  set_label: string;
+  strategy: string;
+  numbers: number[];
+  num_sum: number | null;
+  num_span: number | null;
+  created_at: string;
+}
+
 interface DrawRow {
   draw_no: number;
   draw_date: string;
@@ -248,6 +259,7 @@ export default function StatsPage() {
   const [draws, setDraws]   = useState<DrawRow[]>([]);
   const [latestDraw, setLatestDraw] = useState<DrawRow | null>(null);
   const [loading, setLoading] = useState(true);
+  const [nextRecs, setNextRecs] = useState<NextRec[]>([]);
   const [sortMode, setSortMode] = useState<"rank" | "number">("rank");
   const [patternTab, setPatternTab] = useState<"sum" | "odd" | "sec" | "con" | "end">("sum");
   const [heatmapMode, setHeatmapMode] = useState<"50" | "100" | "200" | "common">("50");
@@ -392,12 +404,15 @@ export default function StatsPage() {
       supabase.from("lotto_draws").select("draw_no,draw_date,n1,n2,n3,n4,n5,n6,bonus,num_sum,odd_count,section_count,consecutive_pairs").order("draw_no").limit(2000),
       // 최신 당첨번호 별도 쿼리 (limit 제약 무관하게 항상 최신 1개)
       supabase.from("lotto_draws").select("draw_no,draw_date,n1,n2,n3,n4,n5,n6,bonus").order("draw_no", { ascending: false }).limit(1).single(),
-    ]).then(([{ data: metaData }, { data: numsData }, { data: pairsData }, { data: drawsData }, { data: latestData }]) => {
+      // 다음 회차 AI 추천
+      supabase.from("lotto_next_recommendation").select("*").order("draw_no", { ascending: false }).order("set_label").limit(10),
+    ]).then(([{ data: metaData }, { data: numsData }, { data: pairsData }, { data: drawsData }, { data: latestData }, { data: recData }]) => {
       if (metaData) setMeta(metaData as MetaRow);
       if (numsData) setNums(numsData as NumberStat[]);
       if (pairsData) setPairs(pairsData as PairStat[]);
       if (drawsData) setDraws(drawsData as DrawRow[]);
       if (latestData) setLatestDraw(latestData as DrawRow);
+      if (recData) setNextRecs(recData as NextRec[]);
       setLoading(false);
       setIsRefreshing(false);
     });
@@ -2242,6 +2257,63 @@ export default function StatsPage() {
         </div>
       </div>
 
+
+      {/* ── 다음 회차 AI 추천 번호 ── */}
+      {nextRecs.length > 0 && (() => {
+        const drawNo = nextRecs[0].draw_no;
+        const createdAt = nextRecs[0].created_at;
+        const strategyColors: Record<string, string> = {
+          "베이지안 집중": "bg-orange-100 text-orange-700 border-orange-200",
+          "공백복귀 중심": "bg-sky-100 text-sky-700 border-sky-200",
+          "균형형":        "bg-emerald-100 text-emerald-700 border-emerald-200",
+          "공백+베이지안": "bg-violet-100 text-violet-700 border-violet-200",
+          "트렌드":        "bg-rose-100 text-rose-700 border-rose-200",
+        };
+        return (
+          <div className="bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-200 rounded-2xl p-4 mb-5">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <span className="text-lg">🔮</span>
+                <div>
+                  <h3 className="text-sm font-extrabold text-amber-900">다음 회차 AI 추천 번호</h3>
+                  <p className="text-[10px] text-amber-600">제 {drawNo}회 · 베이지안 + 공백복귀 복합 분析</p>
+                </div>
+              </div>
+              <span className="text-[9px] text-amber-500">
+                {new Date(createdAt).toLocaleDateString("ko-KR", { month: "short", day: "numeric" })} 생성
+              </span>
+            </div>
+            <div className="space-y-2">
+              {nextRecs.filter(r => r.draw_no === drawNo).map(rec => {
+                const colorCls = strategyColors[rec.strategy] ?? "bg-gray-100 text-gray-700 border-gray-200";
+                return (
+                  <div key={rec.id} className="bg-white rounded-xl p-3 border border-amber-100">
+                    <div className="flex items-center gap-1.5 mb-2 flex-wrap">
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${colorCls}`}>
+                        세트 {rec.set_label}
+                      </span>
+                      <span className="text-[10px] text-gray-500">{rec.strategy}</span>
+                      {rec.num_sum && (
+                        <span className="text-[10px] text-gray-400 ml-auto">
+                          합{rec.num_sum} · span{rec.num_span}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {(rec.numbers as number[]).map((n, i) => (
+                        <Ball key={i} n={n} size="sm" />
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <p className="text-[9px] text-amber-500 mt-2 text-center">
+              ※ 통계적 참고자료입니다. 당첨을 보장하지 않습니다.
+            </p>
+          </div>
+        );
+      })()}
 
       {/* ── 모델 설명 ── */}
       <div className="bg-gray-50 border border-gray-200 rounded-2xl p-4 mb-5">
