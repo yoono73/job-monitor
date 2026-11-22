@@ -1056,6 +1056,7 @@ export default function StatsPage() {
 
         const realWins = mergedWins.filter(w => w.is_test === false);   // saved_numbers(is_test=false)만 포함 — null(추천이력) 제외
         const testWins = mergedWins.filter(w => w.is_test === true);
+        const histWins = mergedWins.filter(w => w.is_test === null);    // recommendation_history(is_test=null)
 
         type WinRow = typeof mergedWins[0];
 
@@ -1243,7 +1244,16 @@ export default function StatsPage() {
               'text-purple-700', 'border-purple-200',
             )}
 
-            {realWins.length === 0 && testWins.length === 0 && (
+            {/* 🤖 AI추천 기반 (recommendation_history) */}
+            {renderSection(
+              histWins, 'AI추천 기반', '🤖',
+              'bg-emerald-50', 'text-emerald-800',
+              'bg-emerald-200', 'text-emerald-800',
+              'bg-emerald-50', 'border-emerald-200',
+              'text-emerald-700', 'border-emerald-200',
+            )}
+
+            {realWins.length === 0 && testWins.length === 0 && histWins.length === 0 && (
               <div className="text-center py-8 text-gray-400 text-sm">당첨 이력이 없습니다</div>
             )}
           </div>
