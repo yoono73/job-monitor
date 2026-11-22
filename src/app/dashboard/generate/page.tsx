@@ -22,7 +22,8 @@ type MethodKey =
   | "overdue" | "recent20" | "bayes_overdue"
   | "spread" | "recent10" | "midbias"
   | "tail_diversity" | "golden_zone" | "overdue_pick" | "triple_common"
-  | "zone_balance" | "hot_recent" | "golden_combo";
+  | "zone_balance" | "hot_recent" | "golden_combo"
+  | "overdue_focused" | "top5_guaranteed";
 
 interface BayesStat {
   number: number;
@@ -854,7 +855,9 @@ const METHODS: Record<MethodKey, { category: string; icon: string; label: string
   triple_common: { category: "통계기반", icon: "🔥", label: "3구간공통",   desc: "최근 50·100·200회 모두 평균 이상 출현 번호 집중" },
   zone_balance:  { category: "균형기반", icon: "🏛️", label: "저중고균형",   desc: "1~15 · 16~30 · 31~45 세 구간 각 2개씩 균등 선택" },
   hot_recent:    { category: "통계기반", icon: "🌡️", label: "최근핫번호",   desc: "최근 50회 과출현 번호 3~4개 의무 포함 · 모멘텀 전략" },
-  golden_combo:  { category: "패턴기반", icon: "💎", label: "황금필터강화",  desc: "합계115~165 + 2~4홀 + 3구간↑ + 연속0~1쌍 4조건 동시 충족" },
+  golden_combo:    { category: "패턴기반", icon: "💎", label: "황금필터강화",  desc: "합계115~165 + 2~4홀 + 3구간↑ + 연속0~1쌍 4조건 동시 충족" },
+  overdue_focused: { category: "통계기반", icon: "🕳️", label: "공백복귀집중",   desc: "장기 미출현 번호 집중 (오버듀 전용 풀)" },
+  top5_guaranteed: { category: "베이지안", icon: "🏆", label: "TOP5보장",       desc: "베이지안 TOP5 중 1개 필수 포함" },
 };
 
 // 새로 추가된 전략 (드롭다운에 NEW 표시) — 신규 전략이 생기면 여기에 키를 추가하세요
@@ -869,8 +872,8 @@ const NEW_DATES: Partial<Record<MethodKey, string>> = {
 
 const CATEGORY_GROUPS = [
   { cat: "개인화",  keys: ["fav"] as MethodKey[] },
-  { cat: "베이지안", keys: ["bayes", "bayes_overdue"] as MethodKey[] },
-  { cat: "통계기반", keys: ["hot", "cold", "pairs", "carryover", "norepeat", "overdue", "recent20", "recent10", "tail_diversity", "overdue_pick", "triple_common", "hot_recent"] as MethodKey[] },
+  { cat: "베이지안", keys: ["bayes", "bayes_overdue", "top5_guaranteed"] as MethodKey[] },
+  { cat: "통계기반", keys: ["hot", "cold", "pairs", "carryover", "norepeat", "overdue", "recent20", "recent10", "tail_diversity", "overdue_pick", "triple_common", "hot_recent", "overdue_focused"] as MethodKey[] },
   { cat: "패턴기반", keys: ["pattern", "hot_pattern", "cold_pattern", "ac", "prime", "midbias", "golden_zone", "golden_combo"] as MethodKey[] },
   { cat: "균형기반", keys: ["random", "balance", "section", "ending", "spread", "zone_balance"] as MethodKey[] },
 ];
@@ -888,6 +891,7 @@ const ALL_TEST_KEYS: MethodKey[] = [
   "tail_diversity", "overdue_pick", "triple_common", "hot_recent",
   "pattern", "hot_pattern", "cold_pattern", "ac", "prime", "midbias", "golden_zone", "golden_combo",
   "random", "balance", "section", "ending", "spread", "zone_balance",
+  "overdue_focused", "top5_guaranteed",
 ];
 
 function runGenerator(key: MethodKey, draws: DrawRow[], bayesStats?: BayesStat[], favorites?: number[], usedNumbers?: Set<number>): Six {
@@ -920,7 +924,9 @@ function runGenerator(key: MethodKey, draws: DrawRow[], bayesStats?: BayesStat[]
     case "triple_common": return genTripleCommon(draws);
     case "zone_balance":  return genZoneBalance();
     case "hot_recent":    return genHotRecent(draws);
-    case "golden_combo":  return genGoldenCombo();
+    case "golden_combo":    return genGoldenCombo();
+    case "overdue_focused": return genOverdueFocused(draws);
+    case "top5_guaranteed": return genTop5Guaranteed(bayesStats ?? []);
   }
 }
 
@@ -1379,6 +1385,10 @@ export default function GeneratePage() {
   const [aiRecCount, setAiRecCount] = useState<5 | 10>(5);
   const [aiRecBusy,  setAiRecBusy]  = useState(false);
   const [aiRecMinScore, setAiRecMinScore] = useState<90 | 100 | 110>(100);
+  const [aiRecSelectedKeys, setAiRecSelectedKeys] = useState<Set<MethodKey>>(
+    new Set(["bayes", "bayes_overdue", "overdue_focused", "top5_guaranteed", "golden_combo", "golden_zone", "triple_common", "zone_balance"] as MethodKey[])
+  );
+  const [aiRecShowPatterns, setAiRecShowPatterns] = useState(false);
 
   // 진단 점수 필터 적용 생성: minScore 이상 나올 때까지 최대 150번 재시도, 그래도 안 되면 최고점 반환
   const genWithFilter = (fn: () => Six, minScore: number): { numbers: Six; score: number } => {
@@ -1394,29 +1404,22 @@ export default function GeneratePage() {
 
   const runAiRec = () => {
     if (bayesStats.length < 6) return;
+    const selectedArr = Array.from(aiRecSelectedKeys).filter(k => k !== "fav");
+    if (selectedArr.length === 0) return;
     setAiRecBusy(true);
     setAiRecSets(null);
     setTimeout(() => {
-      const strategies: { icon: string; label: string; desc: string; fn: () => Six }[] = [
-        { icon: "🧮", label: "베이지안 집중",  desc: "사후확률 가중 선택",         fn: () => genBayes(bayesStats) },
-        { icon: "🔮", label: "복합전략",       desc: "베이지안 × 오버듀 복합",     fn: () => genBayesOverdue(draws, bayesStats) },
-        { icon: "⏰", label: "공백복귀",       desc: "장기 미출현 번호 집중",       fn: () => genOverdueFocused(draws) },
-        { icon: "⚖️", label: "균형형",         desc: "베이지안 + 공백 균형 혼합",  fn: () => genBayesOverdue(draws, bayesStats) },
-        { icon: "🎯", label: "TOP5 보장",      desc: "베이지안 TOP5 1개 필수 포함", fn: () => genTop5Guaranteed(bayesStats) },
-        { icon: "🧮", label: "베이지안 집중B", desc: "사후확률 가중 (재추출)",      fn: () => genBayes(bayesStats) },
-        { icon: "🔮", label: "복합전략B",      desc: "베이지안 × 오버듀 (재추출)", fn: () => genBayesOverdue(draws, bayesStats) },
-        { icon: "⏰", label: "공백복귀B",      desc: "장기 미출현 (재추출)",        fn: () => genOverdueFocused(draws) },
-        { icon: "⚖️", label: "균형형B",        desc: "베이지안 + 공백 (재추출)",   fn: () => genBayesOverdue(draws, bayesStats) },
-        { icon: "🎯", label: "TOP5 보장B",     desc: "베이지안 TOP5 (재추출)",     fn: () => genTop5Guaranteed(bayesStats) },
-      ];
-      const result: LottoSet[] = strategies.slice(0, aiRecCount).map((s, i) => {
-        const { numbers, score } = genWithFilter(s.fn, aiRecMinScore);
+      const result: LottoSet[] = Array.from({ length: aiRecCount }, (_, i) => {
+        const key = selectedArr[i % selectedArr.length];
+        const m = METHODS[key];
+        const fn = () => runGenerator(key, draws, bayesStats, [], new Set<number>());
+        const { numbers, score } = genWithFilter(fn, aiRecMinScore);
         return {
           idx: i + 1,
-          icon: s.icon,
-          method: `AI-${s.label}`,
+          icon: m.icon,
+          method: `AI-${m.label}`,
           category: "AI추천",
-          desc: `${s.desc} · 진단 ${score}점`,
+          desc: `${m.desc} · 진단 ${score}점`,
           numbers,
         };
       });
@@ -2097,29 +2100,63 @@ export default function GeneratePage() {
             <span className="text-xl">🤖</span>
             <h3 className="text-sm font-bold text-emerald-800">AI 추천 번호</h3>
             <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200">베이지안 기반</span>
+            <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded-full bg-violet-500 text-white animate-pulse">NEW</span>
           </div>
           <p className="text-xs text-emerald-700 mb-3">
-            베이지안 확률 · 공백복귀 · 복합전략을 조합해 한 번에 여러 세트를 생성합니다.
+            28가지 패턴 중 원하는 것을 직접 선택해 AI 추천을 받으세요. 선택된 패턴을 순환하며 세트를 생성합니다.
           </p>
 
-          {/* 전략 소개 */}
-          <div className="grid grid-cols-1 gap-1.5 mb-3">
-            {[
-              { icon: "🧮", name: "베이지안 집중", color: "bg-blue-50 border-blue-200 text-blue-800", desc: "1~최신회 전체 추첨 데이터를 분석해 각 번호의 사후확률을 계산합니다. 통계적으로 출현 가능성이 높은 번호에 가중치를 두어 뽑습니다." },
-              { icon: "🔮", name: "복합전략", color: "bg-purple-50 border-purple-200 text-purple-800", desc: "베이지안 확률 × 오버듀(결핍도)를 곱해 번호를 선택합니다. '통계적으로 잘 나오는 번호' + '최근 안 나온 번호'를 동시에 고려합니다." },
-              { icon: "⏰", name: "공백복귀", color: "bg-orange-50 border-orange-200 text-orange-800", desc: "마지막 출현 이후 가장 오랫동안 나오지 않은 번호(결핍도 최고)를 집중 선택합니다. 미출현 기간이 길수록 선택 확률이 높아집니다." },
-              { icon: "⚖️", name: "균형형", color: "bg-teal-50 border-teal-200 text-teal-800", desc: "베이지안 확률과 공백복귀 전략을 균형 있게 혼합합니다. 한 쪽으로 치우치지 않는 중립적인 추천을 원할 때 사용합니다." },
-              { icon: "🎯", name: "TOP5 보장", color: "bg-rose-50 border-rose-200 text-rose-800", desc: "베이지안 순위 1~5위 번호 중 최소 1개를 반드시 포함합니다. 가장 확률 높은 번호를 1개 이상 넣고 나머지는 가중 추출합니다." },
-            ].map(s => (
-              <div key={s.name} className={`flex gap-2 p-2 rounded-lg border ${s.color}`}>
-                <span className="text-base flex-shrink-0">{s.icon}</span>
-                <div>
-                  <span className="text-[11px] font-bold mr-1">{s.name}</span>
-                  <span className="text-[10px] opacity-80">{s.desc}</span>
-                </div>
+          {/* 패턴 선택 토글 */}
+          <button
+            onClick={() => setAiRecShowPatterns(p => !p)}
+            className="w-full flex items-center justify-between px-3 py-2 mb-3 rounded-xl bg-emerald-100 border border-emerald-300 text-emerald-800 text-xs font-bold hover:bg-emerald-200 transition"
+          >
+            <span>🎛️ 패턴 선택 ({aiRecSelectedKeys.size}개 선택됨)</span>
+            <span>{aiRecShowPatterns ? "▲ 접기" : "▼ 펼치기"}</span>
+          </button>
+
+          {/* 패턴 선택 리스트 */}
+          {aiRecShowPatterns && (
+            <div className="mb-3 rounded-xl border border-emerald-200 bg-white p-3 space-y-3">
+              {/* 전체 선택/해제 */}
+              <div className="flex gap-2 pb-2 border-b border-gray-100">
+                <button onClick={() => setAiRecSelectedKeys(new Set(ALL_TEST_KEYS))}
+                  className="px-2 py-1 text-[10px] font-bold rounded bg-emerald-100 text-emerald-700 hover:bg-emerald-200 transition">전체 선택</button>
+                <button onClick={() => setAiRecSelectedKeys(new Set())}
+                  className="px-2 py-1 text-[10px] font-bold rounded bg-gray-100 text-gray-600 hover:bg-gray-200 transition">전체 해제</button>
               </div>
-            ))}
-          </div>
+              {CATEGORY_GROUPS.filter(g => g.cat !== "개인화").map(({ cat, keys }) => {
+                const cc = CAT_COLOR[cat] ?? CAT_COLOR["균형기반"];
+                return (
+                  <div key={cat}>
+                    <div className={`text-[10px] font-bold mb-1.5 px-2 py-0.5 rounded-full inline-block ${cc.badge}`}>{cat}</div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {keys.map(k => {
+                        const m = METHODS[k];
+                        const sel = aiRecSelectedKeys.has(k);
+                        return (
+                          <button key={k}
+                            onClick={() => setAiRecSelectedKeys(prev => {
+                              const next = new Set(prev);
+                              if (sel) next.delete(k); else next.add(k);
+                              return next;
+                            })}
+                            className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-semibold border transition
+                              ${sel ? `${cc.selBg} ${cc.text} ${cc.border}` : "bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100"}`}
+                            title={m.desc}
+                          >
+                            <span>{m.icon}</span>
+                            <span>{m.label}</span>
+                            {sel && <span className="text-[8px]">✓</span>}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
 
           {/* 세트 수 + 최소 점수 선택 */}
           <div className="flex flex-wrap items-center gap-2 mb-3">
@@ -2143,7 +2180,7 @@ export default function GeneratePage() {
             ))}
             <button
               onClick={runAiRec}
-              disabled={aiRecBusy || bayesStats.length < 6}
+              disabled={aiRecBusy || bayesStats.length < 6 || aiRecSelectedKeys.size === 0}
               className="ml-auto px-4 py-1.5 text-xs font-bold rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-40 transition"
             >
               {aiRecBusy ? "생성 중..." : "🤖 생성하기"}
