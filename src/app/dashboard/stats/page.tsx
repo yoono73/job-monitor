@@ -268,6 +268,7 @@ export default function StatsPage() {
   }
   const [myNumbers, setMyNumbers] = useState<MyNumberRow[]>([]);
   const [myTestNumbers, setMyTestNumbers] = useState<MyNumberRow[]>([]);
+  const [userLoggedIn, setUserLoggedIn] = useState<boolean | null>(null); // null=확인중
 
   /* ─── 추천 이력 ─── */
   interface RecommendHistory {
@@ -309,6 +310,7 @@ export default function StatsPage() {
   useEffect(() => {
     const fetchMyNumbers = async () => {
       const { data: { user } } = await supabase.auth.getUser();
+      setUserLoggedIn(!!user);
       if (!user) return;
       const cols = "id,draw_no,numbers,method,category,is_test,matched_count,prize_rank,checked_draw_no";
       const [{ data: real }, { data: test }] = await Promise.all([
@@ -836,7 +838,7 @@ export default function StatsPage() {
         const m = r.matched_count ?? 0;
         if (m >= 0 && m <= 6) dist[m]++;
         if (r.prize_rank !== null && (bestRank === null || r.prize_rank < bestRank)) bestRank = r.prize_rank;
-        const s = r.strategy ?? "기타";
+        const s = (r.method ?? r.category) ?? "기타";
         if (!stratMap[s]) stratMap[s] = { total: 0, best: 0 };
         stratMap[s].total++;
         if (m > stratMap[s].best) stratMap[s].best = m;
@@ -1183,12 +1185,30 @@ export default function StatsPage() {
               <span className="text-base">🏆</span>
               <h3 className="text-sm font-extrabold text-gray-800">패턴별 당첨 이력</h3>
               <span className="text-[10px] text-gray-400 font-normal">3개 이상 일치</span>
+              {/* 로그인 상태 뱃지 */}
+              {userLoggedIn === false && (
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-50 text-red-500 border border-red-200">
+                  🔒 미로그인 — 내 번호 미표시
+                </span>
+              )}
+              {userLoggedIn === true && (
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-green-50 text-green-600 border border-green-200">
+                  ✅ 로그인됨 ({myNumbers.length + myTestNumbers.length}건 로드)
+                </span>
+              )}
               <button
                 onClick={() => setRefreshTrigger(t => t + 1)}
                 className="ml-auto text-[10px] font-semibold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600 hover:bg-indigo-100 transition"
                 title="데이터 갱신"
               >🔄 갱신</button>
             </div>
+
+            {/* 미로그인 안내 */}
+            {userLoggedIn === false && (
+              <div className="text-[11px] text-red-500 bg-red-50 border border-red-200 rounded-xl px-3 py-2 mb-3">
+                로그인하면 저장된 내 번호의 당첨 이력도 함께 표시됩니다.
+              </div>
+            )}
 
             {/* 👤 사용자 기반 */}
             {renderSection(
