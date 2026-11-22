@@ -1037,7 +1037,7 @@ export default function StatsPage() {
           return { text: '-', cls: 'bg-gray-200 text-gray-500' };
         };
 
-        const realWins = mergedWins.filter(w => w.is_test === false);
+        const realWins = mergedWins.filter(w => w.is_test !== true);   // false + null(추천이력) 모두 포함
         const testWins = mergedWins.filter(w => w.is_test === true);
 
         type WinRow = typeof mergedWins[0];
