@@ -1385,10 +1385,6 @@ export default function GeneratePage() {
   const [aiRecCount, setAiRecCount] = useState<5 | 10>(5);
   const [aiRecBusy,  setAiRecBusy]  = useState(false);
   const [aiRecMinScore, setAiRecMinScore] = useState<90 | 100 | 110>(100);
-  const [aiRecSelectedKeys, setAiRecSelectedKeys] = useState<Set<MethodKey>>(
-    new Set(["bayes", "bayes_overdue", "overdue_focused", "top5_guaranteed", "golden_combo", "golden_zone", "triple_common", "zone_balance"] as MethodKey[])
-  );
-  const [aiRecShowPatterns, setAiRecShowPatterns] = useState(false);
 
   // 진단 점수 필터 적용 생성: minScore 이상 나올 때까지 최대 150번 재시도, 그래도 안 되면 최고점 반환
   const genWithFilter = (fn: () => Six, minScore: number): { numbers: Six; score: number } => {
@@ -1402,15 +1398,27 @@ export default function GeneratePage() {
     return best;
   };
 
+  // AI 자동 최적 조합 — 카테고리 다양성을 보장하는 10개 패턴 고정 풀
+  const AI_REC_POOL: MethodKey[] = [
+    "top5_guaranteed",   // 베이지안 TOP5 필수
+    "golden_combo",      // 황금콤보
+    "bayes_overdue",     // 복합전략
+    "overdue_focused",   // 공백복귀집중
+    "hot_recent",        // 최근핫
+    "triple_common",     // 삼중동시출현
+    "zone_balance",      // 구간균형
+    "golden_zone",       // 황금구간
+    "bayes",             // 베이지안 집중
+    "overdue_pick",      // 최장공백
+  ];
+
   const runAiRec = () => {
     if (bayesStats.length < 6) return;
-    const selectedArr = Array.from(aiRecSelectedKeys).filter(k => k !== "fav");
-    if (selectedArr.length === 0) return;
     setAiRecBusy(true);
     setAiRecSets(null);
     setTimeout(() => {
       const result: LottoSet[] = Array.from({ length: aiRecCount }, (_, i) => {
-        const key = selectedArr[i % selectedArr.length];
+        const key = AI_REC_POOL[i % AI_REC_POOL.length];
         const m = METHODS[key];
         const fn = () => runGenerator(key, draws, bayesStats, [], new Set<number>());
         const { numbers, score } = genWithFilter(fn, aiRecMinScore);
@@ -2103,60 +2111,8 @@ export default function GeneratePage() {
             <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded-full bg-violet-500 text-white animate-pulse">NEW</span>
           </div>
           <p className="text-xs text-emerald-700 mb-3">
-            28가지 패턴 중 원하는 것을 직접 선택해 AI 추천을 받으세요. 선택된 패턴을 순환하며 세트를 생성합니다.
+            베이지안·황금콤보·공백복귀 등 고성능 패턴을 자동 조합해 최적 세트를 추천합니다.
           </p>
-
-          {/* 패턴 선택 토글 */}
-          <button
-            onClick={() => setAiRecShowPatterns(p => !p)}
-            className="w-full flex items-center justify-between px-3 py-2 mb-3 rounded-xl bg-emerald-100 border border-emerald-300 text-emerald-800 text-xs font-bold hover:bg-emerald-200 transition"
-          >
-            <span>🎛️ 패턴 선택 ({aiRecSelectedKeys.size}개 선택됨)</span>
-            <span>{aiRecShowPatterns ? "▲ 접기" : "▼ 펼치기"}</span>
-          </button>
-
-          {/* 패턴 선택 리스트 */}
-          {aiRecShowPatterns && (
-            <div className="mb-3 rounded-xl border border-emerald-200 bg-white p-3 space-y-3">
-              {/* 전체 선택/해제 */}
-              <div className="flex gap-2 pb-2 border-b border-gray-100">
-                <button onClick={() => setAiRecSelectedKeys(new Set(ALL_TEST_KEYS))}
-                  className="px-2 py-1 text-[10px] font-bold rounded bg-emerald-100 text-emerald-700 hover:bg-emerald-200 transition">전체 선택</button>
-                <button onClick={() => setAiRecSelectedKeys(new Set())}
-                  className="px-2 py-1 text-[10px] font-bold rounded bg-gray-100 text-gray-600 hover:bg-gray-200 transition">전체 해제</button>
-              </div>
-              {CATEGORY_GROUPS.filter(g => g.cat !== "개인화").map(({ cat, keys }) => {
-                const cc = CAT_COLOR[cat] ?? CAT_COLOR["균형기반"];
-                return (
-                  <div key={cat}>
-                    <div className={`text-[10px] font-bold mb-1.5 px-2 py-0.5 rounded-full inline-block ${cc.badge}`}>{cat}</div>
-                    <div className="flex flex-wrap gap-1.5">
-                      {keys.map(k => {
-                        const m = METHODS[k];
-                        const sel = aiRecSelectedKeys.has(k);
-                        return (
-                          <button key={k}
-                            onClick={() => setAiRecSelectedKeys(prev => {
-                              const next = new Set(prev);
-                              if (sel) next.delete(k); else next.add(k);
-                              return next;
-                            })}
-                            className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-semibold border transition
-                              ${sel ? `${cc.selBg} ${cc.text} ${cc.border}` : "bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100"}`}
-                            title={m.desc}
-                          >
-                            <span>{m.icon}</span>
-                            <span>{m.label}</span>
-                            {sel && <span className="text-[8px]">✓</span>}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
 
           {/* 세트 수 + 최소 점수 선택 */}
           <div className="flex flex-wrap items-center gap-2 mb-3">
@@ -2180,7 +2136,7 @@ export default function GeneratePage() {
             ))}
             <button
               onClick={runAiRec}
-              disabled={aiRecBusy || bayesStats.length < 6 || aiRecSelectedKeys.size === 0}
+              disabled={aiRecBusy || bayesStats.length < 6}
               className="ml-auto px-4 py-1.5 text-xs font-bold rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-40 transition"
             >
               {aiRecBusy ? "생성 중..." : "🤖 생성하기"}
