@@ -1025,7 +1025,7 @@ export default function StatsPage() {
         );
       })()}
 
-      {/* ── 🏆 패턴별 당첨 이력 (통합: 사용자 구매 + 테스트 + 추천이력) ── */}
+      {/* ── 🏆 패턴별 당첨 이력 (사용자 기반 / 테스트 기반 분리) ── */}
       {mergedWins.length > 0 && (() => {
         const rankBadge = (rank: number | null, matched: number | null) => {
           if (rank === 1) return { text: '1등', cls: 'bg-yellow-400 text-yellow-900' };
@@ -1037,131 +1037,180 @@ export default function StatsPage() {
           return { text: '-', cls: 'bg-gray-200 text-gray-500' };
         };
 
-        // 전략별 누적 횟수 (오래된→최신 오름차순, 같은 전략이 나올 때마다 카운트)
-        const winsAsc = [...mergedWins].sort((a, b) => a.draw_no - b.draw_no || a.key.localeCompare(b.key));
-        const stratCumMap: Record<string, number> = {};
-        const stratCumByKey: Record<string, number> = {};
-        winsAsc.forEach(w => {
-          const lbl = `${toStratLabel(w.strategy)}__${w.is_test === true ? 'test' : w.is_test === false ? 'real' : 'rec'}`;
-          stratCumMap[lbl] = (stratCumMap[lbl] || 0) + 1;
-          stratCumByKey[w.key] = stratCumMap[lbl];
-        });
+        const realWins = mergedWins.filter(w => w.is_test === false);
+        const testWins = mergedWins.filter(w => w.is_test === true);
 
-        // 타입 뱃지
-        const typeBadge = (is_test: boolean | null) => {
-          if (is_test === false) return { text: '사용자', cls: 'bg-indigo-100 text-indigo-700' };
-          if (is_test === true)  return { text: '테스트', cls: 'bg-purple-100 text-purple-700' };
-          return { text: '추천이력', cls: 'bg-gray-100 text-gray-500' };
+        type WinRow = typeof mergedWins[0];
+
+        const renderSection = (
+          wins: WinRow[],
+          label: string,
+          emoji: string,
+          headerBg: string,
+          headerText: string,
+          badgeBg: string,
+          badgeText: string,
+          rowBg: string,
+          rowBorder: string,
+          stratTextColor: string,
+          stratBorderColor: string,
+        ) => {
+          if (wins.length === 0) return null;
+
+          // 등수별 집계
+          const rankCount: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+          wins.forEach(w => {
+            if (w.prize_rank !== null && w.prize_rank >= 1 && w.prize_rank <= 5)
+              rankCount[w.prize_rank]++;
+          });
+
+          // 전략별 집계 (내림차순)
+          const stratMap: Record<string, number> = {};
+          wins.forEach(w => {
+            const lbl = toStratLabel(w.strategy);
+            stratMap[lbl] = (stratMap[lbl] || 0) + 1;
+          });
+          const stratEntries = Object.entries(stratMap).sort((a, b) => b[1] - a[1]);
+
+          // 전략별 누적 카운트 (오름차순으로 카운트 후 키로 조회)
+          const winsAsc = [...wins].sort((a, b) => a.draw_no - b.draw_no);
+          const cumMap: Record<string, number> = {};
+          const cumByKey: Record<string, number> = {};
+          winsAsc.forEach(w => {
+            const lbl = toStratLabel(w.strategy);
+            cumMap[lbl] = (cumMap[lbl] || 0) + 1;
+            cumByKey[w.key] = cumMap[lbl];
+          });
+
+          return (
+            <div className={`bg-white border-2 ${rowBorder} rounded-2xl mb-4 shadow-sm overflow-hidden`}>
+              {/* 섹션 헤더 */}
+              <div className={`${headerBg} px-4 py-3 flex items-center justify-between`}>
+                <div className="flex items-center gap-2">
+                  <span className="text-base">{emoji}</span>
+                  <span className={`text-sm font-extrabold ${headerText}`}>{label}</span>
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${badgeBg} ${badgeText}`}>
+                    총 {wins.length}회 당첨
+                  </span>
+                </div>
+              </div>
+
+              <div className="p-4 space-y-4">
+                {/* ① 등수별 당첨현황 */}
+                <div>
+                  <p className="text-[10px] font-bold text-gray-500 mb-2">📊 등수별 당첨현황</p>
+                  <div className="grid grid-cols-5 gap-1.5">
+                    {[1, 2, 3, 4, 5].map(rank => {
+                      const count = rankCount[rank] || 0;
+                      const { text: rt, cls: rc } = rankBadge(rank, null);
+                      return (
+                        <div key={rank} className={`rounded-xl p-2 text-center border ${rowBg} ${rowBorder} ${count === 0 ? 'opacity-35' : ''}`}>
+                          <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${rc}`}>{rt}</span>
+                          <p className={`text-xl font-extrabold mt-1 ${count > 0 ? headerText : 'text-gray-300'}`}>{count}</p>
+                          <p className="text-[9px] text-gray-400">회</p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* ② 당첨 전략 */}
+                <div>
+                  <p className="text-[10px] font-bold text-gray-500 mb-2">🎯 당첨 전략</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {stratEntries.map(([strat, cnt]) => (
+                      <div key={strat} className={`flex items-center gap-1 px-2.5 py-1 rounded-full ${rowBg} border ${rowBorder}`}>
+                        <span className={`text-[10px] font-semibold ${stratTextColor}`}>{strat}</span>
+                        <span className={`text-[11px] font-extrabold ${headerText}`}>{cnt}회</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* ③ 당첨 상세 목록 */}
+                <div>
+                  <p className="text-[10px] font-bold text-gray-500 mb-2">📋 당첨 상세</p>
+                  <div className="grid grid-cols-[38px_30px_1fr] gap-x-1.5 mb-1 px-1">
+                    <span className="text-[9px] font-bold text-gray-400">회차</span>
+                    <span className="text-[9px] font-bold text-gray-400">등수</span>
+                    <span className="text-[9px] font-bold text-gray-400">번호 · 전략 · 누적</span>
+                  </div>
+                  <div className="space-y-1.5">
+                    {wins.map(w => {
+                      const hasNums = w.numbers.length === 6 && w.numbers.some(n => n > 0);
+                      const { text: rankText, cls: rankCls } = rankBadge(w.prize_rank, w.matched_count);
+                      const stratLbl = toStratLabel(w.strategy);
+                      const cumCount = cumByKey[w.key] ?? 1;
+                      return (
+                        <div key={w.key} className={`grid grid-cols-[38px_30px_1fr] gap-x-1.5 items-center rounded-xl px-1.5 py-2 border ${rowBg} ${rowBorder}`}>
+                          <span className="text-[11px] font-bold text-gray-700 leading-none">{w.draw_no}회</span>
+                          <span className={`text-[10px] font-extrabold px-1 py-0.5 rounded-full text-center leading-none ${rankCls}`}>{rankText}</span>
+                          <div className="flex items-center gap-1 flex-wrap">
+                            {hasNums
+                              ? w.numbers.map((n, i) => <Ball key={i} n={n} size="sm" />)
+                              : <span className="text-[10px] text-gray-400 italic">미기록</span>}
+                            <span className={`text-[10px] font-semibold bg-white/80 rounded px-1.5 py-0.5 leading-none shrink-0 border ${stratTextColor} ${stratBorderColor}`}>
+                              {stratLbl}
+                            </span>
+                            <span className="text-[11px] font-extrabold text-amber-600 leading-none shrink-0">
+                              누적<span className="text-[13px] ml-0.5">{cumCount}</span>회
+                            </span>
+                            {w.source === 'recommendation' && (
+                              <button
+                                onClick={() => {
+                                  const histId = parseInt(w.key.replace('h-', ''));
+                                  if (confirm(`${w.draw_no}회 ${stratLbl} 기록을 삭제할까요?`)) deleteHistory(histId);
+                                }}
+                                className="text-[10px] text-gray-300 hover:text-red-500 transition-colors leading-none shrink-0 ml-auto"
+                                title="삭제"
+                              >✕</button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
         };
 
-        // 종합 집계
-        const realWins  = mergedWins.filter(w => w.is_test === false);
-        const testWins  = mergedWins.filter(w => w.is_test === true);
-        const histWins  = mergedWins.filter(w => w.is_test === null);
-
         return (
-          <div className="bg-white border border-gray-200 rounded-2xl p-4 mb-5 shadow-sm">
-            <div className="flex items-center gap-2 mb-1">
+          <div className="mb-5">
+            {/* 타이틀 + 갱신 버튼 */}
+            <div className="flex items-center gap-2 mb-3">
               <span className="text-base">🏆</span>
               <h3 className="text-sm font-extrabold text-gray-800">패턴별 당첨 이력</h3>
               <span className="text-[10px] text-gray-400 font-normal">3개 이상 일치</span>
-              <div className="ml-auto flex items-center gap-1.5">
-                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">
-                  총 {mergedWins.length}회
-                </span>
-                <button
-                  onClick={() => setRefreshTrigger(t => t + 1)}
-                  className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600 hover:bg-indigo-100 transition"
-                  title="데이터 갱신"
-                >
-                  🔄 갱신
-                </button>
-              </div>
+              <button
+                onClick={() => setRefreshTrigger(t => t + 1)}
+                className="ml-auto text-[10px] font-semibold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600 hover:bg-indigo-100 transition"
+                title="데이터 갱신"
+              >🔄 갱신</button>
             </div>
 
-            {/* 타입별 집계 요약 */}
-            <div className="flex gap-2 mb-3 mt-2">
-              {realWins.length > 0 && (
-                <div className="flex-1 bg-indigo-50 border border-indigo-100 rounded-xl p-2 text-center">
-                  <p className="text-[9px] text-indigo-400 mb-0.5">👤 사용자 구매</p>
-                  <p className="text-base font-extrabold text-indigo-700">{realWins.length}회</p>
-                </div>
-              )}
-              {testWins.length > 0 && (
-                <div className="flex-1 bg-purple-50 border border-purple-100 rounded-xl p-2 text-center">
-                  <p className="text-[9px] text-purple-400 mb-0.5">🧪 테스트</p>
-                  <p className="text-base font-extrabold text-purple-700">{testWins.length}회</p>
-                </div>
-              )}
-              {histWins.length > 0 && (
-                <div className="flex-1 bg-gray-50 border border-gray-100 rounded-xl p-2 text-center">
-                  <p className="text-[9px] text-gray-400 mb-0.5">📋 추천이력</p>
-                  <p className="text-base font-extrabold text-gray-600">{histWins.length}회</p>
-                </div>
-              )}
-            </div>
+            {/* 👤 사용자 기반 */}
+            {renderSection(
+              realWins, '사용자 기반', '👤',
+              'bg-indigo-50', 'text-indigo-800',
+              'bg-indigo-200', 'text-indigo-800',
+              'bg-indigo-50', 'border-indigo-200',
+              'text-indigo-700', 'border-indigo-200',
+            )}
 
-            <p className="text-[10px] text-gray-400 mb-3">어떤 전략·타입이 적중했는지 확인하고 패턴 선택에 참고하세요</p>
+            {/* 🧪 테스트 기반 */}
+            {renderSection(
+              testWins, '테스트 기반', '🧪',
+              'bg-purple-50', 'text-purple-800',
+              'bg-purple-200', 'text-purple-800',
+              'bg-purple-50', 'border-purple-200',
+              'text-purple-700', 'border-purple-200',
+            )}
 
-            {/* 헤더 행 */}
-            <div className="grid grid-cols-[38px_30px_1fr] gap-x-1.5 mb-1 px-1.5">
-              <span className="text-[9px] font-bold text-gray-400">회차</span>
-              <span className="text-[9px] font-bold text-gray-400">등수</span>
-              <span className="text-[9px] font-bold text-gray-400">번호 · 타입 · 전략 · 누적</span>
-            </div>
-
-            <div className="space-y-1.5">
-              {mergedWins.map((w) => {
-                const hasNums = w.numbers.length === 6 && w.numbers.some(n => n > 0);
-                const { text: rankText, cls: rankCls } = rankBadge(w.prize_rank, w.matched_count);
-                const stratLbl = toStratLabel(w.strategy);
-                const cumCount = stratCumByKey[w.key] ?? 1;
-                const { text: typeText, cls: typeCls } = typeBadge(w.is_test);
-
-                return (
-                  <div key={w.key} className={`grid grid-cols-[38px_30px_1fr] gap-x-1.5 items-center rounded-xl px-1.5 py-2 border ${
-                    w.is_test === false ? 'bg-indigo-50 border-indigo-100' :
-                    w.is_test === true  ? 'bg-purple-50 border-purple-100' :
-                    'bg-gray-50 border-gray-100'
-                  }`}>
-                    {/* 회차 */}
-                    <span className="text-[11px] font-bold text-gray-700 leading-none">{w.draw_no}회</span>
-
-                    {/* 등수 */}
-                    <span className={`text-[10px] font-extrabold px-1 py-0.5 rounded-full text-center leading-none ${rankCls}`}>
-                      {rankText}
-                    </span>
-
-                    {/* 번호 · 타입 · 전략 · 누적 */}
-                    <div className="flex items-center gap-1 flex-wrap">
-                      {hasNums
-                        ? w.numbers.map((n, i) => <Ball key={i} n={n} size="sm" />)
-                        : <span className="text-[10px] text-gray-400 italic">미기록</span>
-                      }
-                      <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full leading-none shrink-0 ${typeCls}`}>
-                        {typeText}
-                      </span>
-                      <span className="text-[10px] font-semibold text-indigo-700 bg-white/70 rounded px-1.5 py-0.5 leading-none shrink-0 border border-indigo-100">
-                        {stratLbl}
-                      </span>
-                      <span className="text-[11px] font-extrabold text-amber-600 leading-none shrink-0">
-                        누적<span className="text-[13px] ml-0.5">{cumCount}</span>회
-                      </span>
-                      {w.source === 'recommendation' && (
-                        <button
-                          onClick={() => {
-                            const histId = parseInt(w.key.replace('h-', ''));
-                            if (confirm(`${w.draw_no}회 ${stratLbl} 기록을 삭제할까요?`)) deleteHistory(histId);
-                          }}
-                          className="text-[10px] text-gray-300 hover:text-red-500 transition-colors leading-none shrink-0 ml-auto"
-                          title="삭제"
-                        >✕</button>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+            {realWins.length === 0 && testWins.length === 0 && (
+              <div className="text-center py-8 text-gray-400 text-sm">당첨 이력이 없습니다</div>
+            )}
           </div>
         );
       })()}
