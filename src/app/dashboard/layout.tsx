@@ -129,7 +129,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       {/* ── 업데이트 공지 배너 ── */}
       <div className="bg-gradient-to-r from-violet-600 to-indigo-600 text-white text-xs font-semibold px-4 py-2 flex items-center justify-center gap-2 flex-wrap">
         <span className="bg-white text-violet-700 text-[9px] font-extrabold px-1.5 py-0.5 rounded-full shrink-0 animate-pulse">NEW</span>
-        <span>🏅 v2.8 업데이트: 나의 번호 성적 분석 추가 (통계 페이지) + 100세트 테스트 시뮬레이션 기능 추가</span>
+        <span>🤖 v2.9 업데이트: AI추천 전략 설명 + 진단하기 + 조건필터(90/100/110점) 기능 추가</span>
       </div>
 
       {/* 본문 */}

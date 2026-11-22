@@ -1378,7 +1378,7 @@ export default function GeneratePage() {
   const [aiRecSets,  setAiRecSets]  = useState<LottoSet[] | null>(null);
   const [aiRecCount, setAiRecCount] = useState<5 | 10>(5);
   const [aiRecBusy,  setAiRecBusy]  = useState(false);
-  const [aiRecMinScore, setAiRecMinScore] = useState<50 | 60 | 70>(60);
+  const [aiRecMinScore, setAiRecMinScore] = useState<90 | 100 | 110>(100);
 
   // 진단 점수 필터 적용 생성: minScore 이상 나올 때까지 최대 150번 재시도, 그래도 안 되면 최고점 반환
   const genWithFilter = (fn: () => Six, minScore: number): { numbers: Six; score: number } => {
@@ -1520,7 +1520,8 @@ export default function GeneratePage() {
   }, [nextDrawNo, supabase]);
 
   const saveSet = useCallback(async (s: LottoSet) => {
-    if (!userId || !nextDrawNo) return;
+    if (!userId) { setSaveMsg("⚠️ 로그인 후 저장할 수 있어요"); setTimeout(() => setSaveMsg(null), 2500); return; }
+    if (!nextDrawNo) { setSaveMsg("⚠️ 다음 회차 정보를 불러오는 중이에요"); setTimeout(() => setSaveMsg(null), 2500); return; }
     const { error } = await supabase.from("saved_numbers").insert({
       user_id:  userId,
       draw_no:  nextDrawNo,
@@ -2130,12 +2131,12 @@ export default function GeneratePage() {
               >{n}세트</button>
             ))}
             <span className="text-xs font-semibold text-emerald-700 ml-2">조건필터:</span>
-            {([50, 60, 70] as const).map(s => (
+            {([90, 100, 110] as const).map(s => (
               <button key={s} onClick={() => setAiRecMinScore(s)}
                 className={`px-3 py-1 text-xs font-bold rounded-lg border transition
                   ${aiRecMinScore === s
-                    ? s >= 70 ? "bg-rose-500 text-white border-rose-500"
-                      : s >= 60 ? "bg-amber-500 text-white border-amber-500"
+                    ? s >= 110 ? "bg-rose-500 text-white border-rose-500"
+                      : s >= 100 ? "bg-amber-500 text-white border-amber-500"
                       : "bg-gray-500 text-white border-gray-500"
                     : "bg-white text-emerald-700 border-emerald-300 hover:bg-emerald-50"}`}
               >{s}점+</button>
@@ -2150,6 +2151,11 @@ export default function GeneratePage() {
           </div>
 
           {/* 결과 */}
+          {saveMsg && (
+            <div className="mb-2 px-3 py-2 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-semibold text-center">
+              {saveMsg}
+            </div>
+          )}
           {aiRecSets && aiRecSets.length > 0 && (
             <div className="space-y-2">
               {aiRecSets.map(s => (
@@ -2160,7 +2166,12 @@ export default function GeneratePage() {
                   bayesStats={bayesStats}
                   pairStats={pairStats}
                   onCopy={() => navigator.clipboard.writeText(s.numbers.join("  "))}
-                  onUse={() => { setSets([{ ...s, idx: 1 }]); setSavedSets(new Set()); setBoughtSets(new Set()); }}
+                  onUse={() => {
+                    setSets(prev => {
+                      const next = [...prev, { ...s, idx: prev.length + 1 }];
+                      return next;
+                    });
+                  }}
                   onSave={() => saveSet({ ...s, idx: s.idx })}
                 />
               ))}
