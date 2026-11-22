@@ -259,7 +259,8 @@ export default function StatsPage() {
     id: number;
     draw_no: number;
     numbers: number[];
-    strategy: string | null;
+    method: string | null;   // saved_numbers 실제 컬럼
+    category: string | null;
     is_test: boolean;
     matched_count: number | null;
     prize_rank: number | null;
@@ -309,7 +310,7 @@ export default function StatsPage() {
     const fetchMyNumbers = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
-      const cols = "id,draw_no,numbers,strategy,is_test,matched_count,prize_rank,checked_draw_no";
+      const cols = "id,draw_no,numbers,method,category,is_test,matched_count,prize_rank,checked_draw_no";
       const [{ data: real }, { data: test }] = await Promise.all([
         supabase.from("saved_numbers").select(cols).eq("is_test", false).not("checked_draw_no", "is", null).order("checked_draw_no", { ascending: false }),
         supabase.from("saved_numbers").select(cols).eq("is_test", true).not("checked_draw_no", "is", null).order("checked_draw_no", { ascending: false }),
@@ -880,7 +881,7 @@ export default function StatsPage() {
         prize_rank: r.prize_rank,
         matched_count: r.matched_count,
         numbers: Array.isArray(r.numbers) ? (r.numbers as number[]) : [],
-        strategy: r.strategy,
+        strategy: r.method ?? r.category,
         is_test: false,
         source: 'saved',
       }));
@@ -894,7 +895,7 @@ export default function StatsPage() {
         prize_rank: r.prize_rank,
         matched_count: r.matched_count,
         numbers: Array.isArray(r.numbers) ? (r.numbers as number[]) : [],
-        strategy: r.strategy,
+        strategy: r.method ?? r.category,
         is_test: true,
         source: 'saved',
       }));
