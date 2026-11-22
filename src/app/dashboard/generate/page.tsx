@@ -404,6 +404,52 @@ function genBayesOverdue(draws: DrawRow[], bayesStats: BayesStat[]): Six {
   return sel.sort((a, b) => a - b) as Six;
 }
 
+/* ── 공백복귀 집중 ── */
+function genOverdueFocused(draws: DrawRow[]): Six {
+  if (draws.length === 0) {
+    return Array.from({ length: 45 }, (_, i) => i + 1)
+      .sort(() => Math.random() - 0.5).slice(0, 6).sort((a, b) => a - b) as Six;
+  }
+  const total = draws.length;
+  const lastIdx = new Array(46).fill(total);
+  const freq = new Array(46).fill(0);
+  draws.forEach((d, i) => {
+    [d.n1, d.n2, d.n3, d.n4, d.n5, d.n6].forEach(n => {
+      freq[n]++; if (lastIdx[n] === total) lastIdx[n] = i;
+    });
+  });
+  const scores = Array.from({ length: 45 }, (_, i) => {
+    const n = i + 1;
+    return { number: n, score: lastIdx[n] / ((total / (freq[n] || 1))) };
+  }).sort((a, b) => b.score - a.score).slice(0, 15);
+  const sel: number[] = [];
+  let pool = [...scores];
+  while (sel.length < 6 && pool.length > 0) {
+    const tw = pool.reduce((s, p) => s + p.score, 0);
+    let r = Math.random() * tw; let idx = pool.length - 1;
+    for (let i = 0; i < pool.length; i++) { r -= pool[i].score; if (r <= 0) { idx = i; break; } }
+    sel.push(pool[idx].number); pool.splice(idx, 1);
+  }
+  return sel.sort((a, b) => a - b) as Six;
+}
+
+/* ── TOP5 보장 ── */
+function genTop5Guaranteed(bayesStats: BayesStat[]): Six {
+  if (bayesStats.length < 6) return genBayes(bayesStats);
+  const sorted = [...bayesStats].sort((a, b) => a.bayesian_rank - b.bayesian_rank);
+  const top5 = sorted.slice(0, 5).map(b => b.number);
+  const guaranteed = top5[Math.floor(Math.random() * top5.length)];
+  const pool = bayesStats.filter(b => b.number !== guaranteed);
+  const sel: number[] = [guaranteed];
+  while (sel.length < 6 && pool.length > 0) {
+    const tw = pool.reduce((s, b) => s + b.posterior_mean, 0);
+    let r = Math.random() * tw; let idx = pool.length - 1;
+    for (let i = 0; i < pool.length; i++) { r -= pool[i].posterior_mean; if (r <= 0) { idx = i; break; } }
+    sel.push(pool[idx].number); pool.splice(idx, 1);
+  }
+  return sel.sort((a, b) => a - b) as Six;
+}
+
 /* ─── 수비학 행운번호 ─── */
 function digitalRoot(n: number): number {
   let x = n;
@@ -1240,6 +1286,41 @@ export default function GeneratePage() {
     }, 500);
   };
 
+  /* ── AI추천 번호 state ── */
+  const [aiRecSets,  setAiRecSets]  = useState<LottoSet[] | null>(null);
+  const [aiRecCount, setAiRecCount] = useState<5 | 10>(5);
+  const [aiRecBusy,  setAiRecBusy]  = useState(false);
+
+  const runAiRec = () => {
+    if (bayesStats.length < 6) return;
+    setAiRecBusy(true);
+    setAiRecSets(null);
+    setTimeout(() => {
+      const strategies: { icon: string; label: string; desc: string; fn: () => Six }[] = [
+        { icon: "🧮", label: "베이지안 집중",  desc: "사후확률 가중 선택",         fn: () => genBayes(bayesStats) },
+        { icon: "🔮", label: "복합전략",       desc: "베이지안 × 오버듀 복합",     fn: () => genBayesOverdue(draws, bayesStats) },
+        { icon: "⏰", label: "공백복귀",       desc: "장기 미출현 번호 집중",       fn: () => genOverdueFocused(draws) },
+        { icon: "⚖️", label: "균형형",         desc: "베이지안 + 공백 균형 혼합",  fn: () => genBayesOverdue(draws, bayesStats) },
+        { icon: "🎯", label: "TOP5 보장",      desc: "베이지안 TOP5 1개 필수 포함", fn: () => genTop5Guaranteed(bayesStats) },
+        { icon: "🧮", label: "베이지안 집중B", desc: "사후확률 가중 (재추출)",      fn: () => genBayes(bayesStats) },
+        { icon: "🔮", label: "복합전략B",      desc: "베이지안 × 오버듀 (재추출)", fn: () => genBayesOverdue(draws, bayesStats) },
+        { icon: "⏰", label: "공백복귀B",      desc: "장기 미출현 (재추출)",        fn: () => genOverdueFocused(draws) },
+        { icon: "⚖️", label: "균형형B",        desc: "베이지안 + 공백 (재추출)",   fn: () => genBayesOverdue(draws, bayesStats) },
+        { icon: "🎯", label: "TOP5 보장B",     desc: "베이지안 TOP5 (재추출)",     fn: () => genTop5Guaranteed(bayesStats) },
+      ];
+      const result: LottoSet[] = strategies.slice(0, aiRecCount).map((s, i) => ({
+        idx: i + 1,
+        icon: s.icon,
+        method: `AI-${s.label}`,
+        category: "AI추천",
+        desc: s.desc,
+        numbers: s.fn(),
+      }));
+      setAiRecSets(result);
+      setAiRecBusy(false);
+    }, 400);
+  };
+
   // 수비학 행운번호
   const [birthdate,   setBirthdate]  = useState<string | null>(null);
   const [bdInput,     setBdInput]    = useState("");
@@ -1902,6 +1983,74 @@ export default function GeneratePage() {
             )}
           </div>
         )}
+      </div>
+
+      {/* ━━━ 🤖 AI 추천 번호 ━━━ */}
+      <div className="mb-5">
+        <div className="bg-gradient-to-br from-emerald-50 to-teal-50 border border-emerald-200 rounded-2xl p-4">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-xl">🤖</span>
+            <h3 className="text-sm font-bold text-emerald-800">AI 추천 번호</h3>
+            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200">베이지안 기반</span>
+          </div>
+          <p className="text-xs text-emerald-700 mb-3">
+            베이지안 확률 · 공백복귀 · 복합전략을 조합해 한 번에 여러 세트를 생성합니다.
+          </p>
+
+          {/* 세트 수 선택 */}
+          <div className="flex items-center gap-2 mb-3">
+            <span className="text-xs font-semibold text-emerald-700">세트 수:</span>
+            {([5, 10] as const).map(n => (
+              <button
+                key={n}
+                onClick={() => setAiRecCount(n)}
+                className={`px-3 py-1 text-xs font-bold rounded-lg border transition
+                  ${aiRecCount === n
+                    ? "bg-emerald-600 text-white border-emerald-600"
+                    : "bg-white text-emerald-700 border-emerald-300 hover:bg-emerald-50"}`}
+              >{n}세트</button>
+            ))}
+            <button
+              onClick={runAiRec}
+              disabled={aiRecBusy || bayesStats.length < 6}
+              className="ml-auto px-4 py-1.5 text-xs font-bold rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-40 transition"
+            >
+              {aiRecBusy ? "생성 중..." : "🤖 생성하기"}
+            </button>
+          </div>
+
+          {/* 결과 */}
+          {aiRecSets && aiRecSets.length > 0 && (
+            <div className="space-y-2">
+              {aiRecSets.map(s => (
+                <div key={s.idx} className="bg-white border border-emerald-200 rounded-xl p-3">
+                  <div className="flex items-center gap-1.5 mb-2">
+                    <span className="text-sm">{s.icon}</span>
+                    <span className="text-xs font-bold text-emerald-800">{s.method.replace("AI-", "")}</span>
+                    <span className="text-[10px] text-emerald-600 ml-1">{s.desc}</span>
+                  </div>
+                  <div className="flex items-center gap-1 flex-wrap mb-2">
+                    {s.numbers.map((n, i) => <Ball key={i} n={n} />)}
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => navigator.clipboard.writeText(s.numbers.join("  "))}
+                      className="flex-1 py-1.5 text-xs font-semibold rounded-lg bg-white border border-emerald-300 text-emerald-700 hover:bg-emerald-50 transition"
+                    >복사</button>
+                    <button
+                      onClick={() => { setSets([{ ...s, idx: 1 }]); setSavedSets(new Set()); setBoughtSets(new Set()); }}
+                      className="flex-1 py-1.5 text-xs font-semibold rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition"
+                    >✅ 사용하기</button>
+                    <button
+                      onClick={() => saveSet({ ...s, idx: s.idx })}
+                      className="flex-1 py-1.5 text-xs font-semibold rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition"
+                    >💾 저장</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* ━━━ 🔮 오늘의 행운 번호 ━━━ */}
