@@ -251,6 +251,8 @@ export default function StatsPage() {
   const [sortMode, setSortMode] = useState<"rank" | "number">("rank");
   const [patternTab, setPatternTab] = useState<"sum" | "odd" | "sec" | "con" | "end">("sum");
   const [heatmapMode, setHeatmapMode] = useState<"50" | "100" | "200" | "common">("50");
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   /* ─── 나의 번호 성적 ─── */
   interface MyNumberRow {
@@ -301,7 +303,7 @@ export default function StatsPage() {
       .order("draw_no", { ascending: false })
       .order("id", { ascending: true })
       .then(({ data }) => { if (data) setAllWins(data as RecommendHistory[]); });
-  }, [supabase]);
+  }, [supabase, refreshTrigger]);
 
   useEffect(() => {
     const fetchMyNumbers = async () => {
@@ -309,14 +311,14 @@ export default function StatsPage() {
       if (!user) return;
       const cols = "id,draw_no,numbers,strategy,is_test,matched_count,prize_rank,checked_draw_no";
       const [{ data: real }, { data: test }] = await Promise.all([
-        supabase.from("saved_numbers").select(cols).eq("is_test", false).not("checked_draw_no", "is", null).order("draw_no", { ascending: false }),
-        supabase.from("saved_numbers").select(cols).eq("is_test", true).not("checked_draw_no", "is", null).order("draw_no", { ascending: false }),
+        supabase.from("saved_numbers").select(cols).eq("is_test", false).not("checked_draw_no", "is", null).order("checked_draw_no", { ascending: false }),
+        supabase.from("saved_numbers").select(cols).eq("is_test", true).not("checked_draw_no", "is", null).order("checked_draw_no", { ascending: false }),
       ]);
       if (real) setMyNumbers(real as MyNumberRow[]);
       if (test) setMyTestNumbers(test as MyNumberRow[]);
     };
     fetchMyNumbers();
-  }, [supabase]);
+  }, [supabase, refreshTrigger]);
 
   const deleteHistory = async (id: number) => {
     const { error } = await supabase.from("recommendation_history").delete().eq("id", id);
@@ -379,6 +381,7 @@ export default function StatsPage() {
 
 
   useEffect(() => {
+    setIsRefreshing(true);
     Promise.all([
       supabase.from("lotto_analysis_meta").select("*").order("id", { ascending: false }).limit(1).single(),
       supabase.from("lotto_number_stats").select("*").order("bayesian_rank"),
@@ -393,8 +396,27 @@ export default function StatsPage() {
       if (drawsData) setDraws(drawsData as DrawRow[]);
       if (latestData) setLatestDraw(latestData as DrawRow);
       setLoading(false);
+      setIsRefreshing(false);
     });
-  }, [supabase]);
+  }, [supabase, refreshTrigger]);
+
+  /* ─── 토요일 추첨 후 자동 갱신 감지 ─── */
+  useEffect(() => {
+    if (!latestDraw) return;
+    const checkNewDraw = async () => {
+      const { data } = await supabase
+        .from("lotto_draws")
+        .select("draw_no")
+        .order("draw_no", { ascending: false })
+        .limit(1)
+        .single();
+      if (data && data.draw_no > latestDraw.draw_no) {
+        setRefreshTrigger(t => t + 1);
+      }
+    };
+    window.addEventListener("focus", checkNewDraw);
+    return () => window.removeEventListener("focus", checkNewDraw);
+  }, [supabase, latestDraw]);
 
   const sortedNums = useMemo(() => {
     if (sortMode === "number") return [...nums].sort((a, b) => a.number - b.number);
@@ -824,6 +846,74 @@ export default function StatsPage() {
     return { real: calc(myNumbers), test: calc(myTestNumbers) };
   }, [myNumbers, myTestNumbers]);
 
+  /* ─── 통합 당첨 이력 (saved_numbers + recommendation_history) ─── */
+  interface MergedWinRow {
+    key: string;
+    draw_no: number;
+    prize_rank: number | null;
+    matched_count: number | null;
+    numbers: number[];
+    strategy: string | null;
+    is_test: boolean | null; // null = recommendation_history (타입 미구분)
+    source: 'saved' | 'recommendation';
+  }
+
+  const STRAT_LABEL_MAP: Record<string, string> = {
+    condition_filter: '조건필터', golden_range: '황금구간',
+    number_pair: '번호쌍', preferred: '선호번호',
+    distribution: '분산추천', tail_diversity: '끝자리',
+    long_absent: '공백', bayesian: '베이지안',
+    '조건필터': '조건필터', '황금구간': '황금구간',
+    '번호쌍': '번호쌍', '선호번호': '선호번호',
+    '분산추천': '분산추천',
+  };
+  const toStratLabel = (s: string | null) => STRAT_LABEL_MAP[s ?? ''] ?? (s ?? '-');
+
+  // eslint-disable-next-line react-hooks/rules-of-hooks
+  const mergedWins = useMemo((): MergedWinRow[] => {
+    const savedReal: MergedWinRow[] = myNumbers
+      .filter(r => (r.matched_count ?? 0) >= 3 || r.prize_rank !== null)
+      .filter(r => r.checked_draw_no !== null)
+      .map(r => ({
+        key: `sr-${r.id}`,
+        draw_no: r.checked_draw_no!,
+        prize_rank: r.prize_rank,
+        matched_count: r.matched_count,
+        numbers: Array.isArray(r.numbers) ? (r.numbers as number[]) : [],
+        strategy: r.strategy,
+        is_test: false,
+        source: 'saved',
+      }));
+
+    const savedTest: MergedWinRow[] = myTestNumbers
+      .filter(r => (r.matched_count ?? 0) >= 3 || r.prize_rank !== null)
+      .filter(r => r.checked_draw_no !== null)
+      .map(r => ({
+        key: `st-${r.id}`,
+        draw_no: r.checked_draw_no!,
+        prize_rank: r.prize_rank,
+        matched_count: r.matched_count,
+        numbers: Array.isArray(r.numbers) ? (r.numbers as number[]) : [],
+        strategy: r.strategy,
+        is_test: true,
+        source: 'saved',
+      }));
+
+    const histRows: MergedWinRow[] = allWins.map(w => ({
+      key: `h-${w.id}`,
+      draw_no: w.draw_no,
+      prize_rank: w.prize_rank,
+      matched_count: w.matched_count,
+      numbers: Array.isArray(w.numbers) ? (w.numbers as number[]) : [],
+      strategy: w.strategy,
+      is_test: null,
+      source: 'recommendation',
+    }));
+
+    return [...savedReal, ...savedTest, ...histRows]
+      .sort((a, b) => b.draw_no - a.draw_no || a.key.localeCompare(b.key));
+  }, [myNumbers, myTestNumbers, allWins]);
+
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] gap-3">
@@ -852,6 +942,13 @@ export default function StatsPage() {
 
   return (
     <div className="px-4 py-5 md:px-6 lg:px-8 max-w-3xl mx-auto">
+
+      {/* ── 🔄 갱신 버튼 ── */}
+      {isRefreshing && (
+        <div className="flex items-center justify-center gap-2 py-2 mb-3 bg-indigo-50 rounded-xl text-indigo-600 text-xs font-semibold">
+          <span className="animate-spin">⏳</span> 최신 데이터로 갱신 중...
+        </div>
+      )}
 
       {/* ── 🏅 나의 번호 성적 분析 ── */}
       {(myNumberStats.real || myNumberStats.test) && (() => {
@@ -927,11 +1024,8 @@ export default function StatsPage() {
         );
       })()}
 
-      {/* ── 🏆 패턴별 당첨 이력 ── */}
-      {(() => {
-        const wins = [...allWins].sort((a, b) => b.draw_no - a.draw_no || a.id - b.id);
-        const total = wins.length;
-
+      {/* ── 🏆 패턴별 당첨 이력 (통합: 사용자 구매 + 테스트 + 추천이력) ── */}
+      {mergedWins.length > 0 && (() => {
         const rankBadge = (rank: number | null, matched: number | null) => {
           if (rank === 1) return { text: '1등', cls: 'bg-yellow-400 text-yellow-900' };
           if (rank === 2) return { text: '2등', cls: 'bg-orange-400 text-white' };
@@ -942,57 +1036,93 @@ export default function StatsPage() {
           return { text: '-', cls: 'bg-gray-200 text-gray-500' };
         };
 
-        const stratLabel = (s: string | null) => {
-          const map: Record<string, string> = {
-            condition_filter: '조건필터', '조건필터': '조건필터',
-            golden_range: '황금구간', '황금구간': '황금구간',
-            number_pair: '번호쌍', '번호쌍': '번호쌍',
-            preferred: '선호번호', '선호번호': '선호번호',
-            distribution: '분산추천', '분산추천': '분산추천',
-            tail_diversity: '끝자리', long_absent: '공백', bayesian: '베이지안',
-          };
-          return map[s ?? ''] ?? (s ?? '-');
+        // 전략별 누적 횟수 (오래된→최신 오름차순, 같은 전략이 나올 때마다 카운트)
+        const winsAsc = [...mergedWins].sort((a, b) => a.draw_no - b.draw_no || a.key.localeCompare(b.key));
+        const stratCumMap: Record<string, number> = {};
+        const stratCumByKey: Record<string, number> = {};
+        winsAsc.forEach(w => {
+          const lbl = `${toStratLabel(w.strategy)}__${w.is_test === true ? 'test' : w.is_test === false ? 'real' : 'rec'}`;
+          stratCumMap[lbl] = (stratCumMap[lbl] || 0) + 1;
+          stratCumByKey[w.key] = stratCumMap[lbl];
+        });
+
+        // 타입 뱃지
+        const typeBadge = (is_test: boolean | null) => {
+          if (is_test === false) return { text: '사용자', cls: 'bg-indigo-100 text-indigo-700' };
+          if (is_test === true)  return { text: '테스트', cls: 'bg-purple-100 text-purple-700' };
+          return { text: '추천이력', cls: 'bg-gray-100 text-gray-500' };
         };
 
-        if (total === 0) return null;
-
-        // 전략별 누적 순번 계산 (오래된 것부터 1회, 2회, 3회...)
-        // 같은 회차 내에서는 id DESC → 화면에서 위(id 작은 것)가 높은 누적 횟수를 받도록
-        const winsAsc = [...wins].sort((a, b) => a.draw_no - b.draw_no || b.id - a.id);
-        const stratCountMap: Record<string, number> = {};
-        const stratCumByIdMap: Record<number, number> = {};
-        winsAsc.forEach(w => {
-          const key = stratLabel(w.strategy);
-          stratCountMap[key] = (stratCountMap[key] || 0) + 1;
-          stratCumByIdMap[w.id] = stratCountMap[key];
-        });
+        // 종합 집계
+        const realWins  = mergedWins.filter(w => w.is_test === false);
+        const testWins  = mergedWins.filter(w => w.is_test === true);
+        const histWins  = mergedWins.filter(w => w.is_test === null);
 
         return (
           <div className="bg-white border border-gray-200 rounded-2xl p-4 mb-5 shadow-sm">
-            <h3 className="text-sm font-extrabold text-gray-800 mb-1 flex items-center gap-1.5">
-              🏆 패턴별 당첨 이력
-              <span className="text-[11px] font-normal text-gray-400 ml-1">3개 이상 일치</span>
-              <span className="ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">총 {total}회</span>
-            </h3>
-            <p className="text-[10px] text-gray-400 mb-3">어떤 전략이 적중했는지 확인하고 패턴 선택에 참고하세요</p>
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-base">🏆</span>
+              <h3 className="text-sm font-extrabold text-gray-800">패턴별 당첨 이력</h3>
+              <span className="text-[10px] text-gray-400 font-normal">3개 이상 일치</span>
+              <div className="ml-auto flex items-center gap-1.5">
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">
+                  총 {mergedWins.length}회
+                </span>
+                <button
+                  onClick={() => setRefreshTrigger(t => t + 1)}
+                  className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600 hover:bg-indigo-100 transition"
+                  title="데이터 갱신"
+                >
+                  🔄 갱신
+                </button>
+              </div>
+            </div>
+
+            {/* 타입별 집계 요약 */}
+            <div className="flex gap-2 mb-3 mt-2">
+              {realWins.length > 0 && (
+                <div className="flex-1 bg-indigo-50 border border-indigo-100 rounded-xl p-2 text-center">
+                  <p className="text-[9px] text-indigo-400 mb-0.5">👤 사용자 구매</p>
+                  <p className="text-base font-extrabold text-indigo-700">{realWins.length}회</p>
+                </div>
+              )}
+              {testWins.length > 0 && (
+                <div className="flex-1 bg-purple-50 border border-purple-100 rounded-xl p-2 text-center">
+                  <p className="text-[9px] text-purple-400 mb-0.5">🧪 테스트</p>
+                  <p className="text-base font-extrabold text-purple-700">{testWins.length}회</p>
+                </div>
+              )}
+              {histWins.length > 0 && (
+                <div className="flex-1 bg-gray-50 border border-gray-100 rounded-xl p-2 text-center">
+                  <p className="text-[9px] text-gray-400 mb-0.5">📋 추천이력</p>
+                  <p className="text-base font-extrabold text-gray-600">{histWins.length}회</p>
+                </div>
+              )}
+            </div>
+
+            <p className="text-[10px] text-gray-400 mb-3">어떤 전략·타입이 적중했는지 확인하고 패턴 선택에 참고하세요</p>
 
             {/* 헤더 행 */}
-            <div className="grid grid-cols-[40px_32px_1fr] gap-x-1.5 mb-1 px-1.5">
-              <span className="text-[10px] font-bold text-gray-400">회차</span>
-              <span className="text-[10px] font-bold text-gray-400">등수</span>
-              <span className="text-[10px] font-bold text-gray-400">번호 · 패턴 · 누적</span>
+            <div className="grid grid-cols-[38px_30px_1fr] gap-x-1.5 mb-1 px-1.5">
+              <span className="text-[9px] font-bold text-gray-400">회차</span>
+              <span className="text-[9px] font-bold text-gray-400">등수</span>
+              <span className="text-[9px] font-bold text-gray-400">번호 · 타입 · 전략 · 누적</span>
             </div>
 
             <div className="space-y-1.5">
-              {wins.map((w) => {
-                const nums6 = Array.isArray(w.numbers) ? (w.numbers as number[]) : [];
-                const hasNums = nums6.length === 6 && nums6.some(n => n > 0);
+              {mergedWins.map((w) => {
+                const hasNums = w.numbers.length === 6 && w.numbers.some(n => n > 0);
                 const { text: rankText, cls: rankCls } = rankBadge(w.prize_rank, w.matched_count);
-                const label = stratLabel(w.strategy);
-                const stratCumCount = stratCumByIdMap[w.id] ?? 1;
+                const stratLbl = toStratLabel(w.strategy);
+                const cumCount = stratCumByKey[w.key] ?? 1;
+                const { text: typeText, cls: typeCls } = typeBadge(w.is_test);
 
                 return (
-                  <div key={w.id} className="grid grid-cols-[40px_32px_1fr] gap-x-1.5 items-center bg-gray-50 rounded-xl px-1.5 py-2 border border-gray-100">
+                  <div key={w.key} className={`grid grid-cols-[38px_30px_1fr] gap-x-1.5 items-center rounded-xl px-1.5 py-2 border ${
+                    w.is_test === false ? 'bg-indigo-50 border-indigo-100' :
+                    w.is_test === true  ? 'bg-purple-50 border-purple-100' :
+                    'bg-gray-50 border-gray-100'
+                  }`}>
                     {/* 회차 */}
                     <span className="text-[11px] font-bold text-gray-700 leading-none">{w.draw_no}회</span>
 
@@ -1001,23 +1131,31 @@ export default function StatsPage() {
                       {rankText}
                     </span>
 
-                    {/* 번호 · 패턴 · 누적 · 삭제 — 한 줄 */}
-                    <div className="flex items-center gap-1.5 flex-wrap">
+                    {/* 번호 · 타입 · 전략 · 누적 */}
+                    <div className="flex items-center gap-1 flex-wrap">
                       {hasNums
-                        ? nums6.map((n, i) => <Ball key={i} n={n} size="sm" />)
+                        ? w.numbers.map((n, i) => <Ball key={i} n={n} size="sm" />)
                         : <span className="text-[10px] text-gray-400 italic">미기록</span>
                       }
-                      <span className="text-[10px] font-semibold text-indigo-700 bg-indigo-50 rounded px-1.5 py-0.5 leading-none shrink-0">
-                        {label}
+                      <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full leading-none shrink-0 ${typeCls}`}>
+                        {typeText}
+                      </span>
+                      <span className="text-[10px] font-semibold text-indigo-700 bg-white/70 rounded px-1.5 py-0.5 leading-none shrink-0 border border-indigo-100">
+                        {stratLbl}
                       </span>
                       <span className="text-[11px] font-extrabold text-amber-600 leading-none shrink-0">
-                        누적<span className="text-[13px] ml-0.5">{stratCumCount}</span>회
+                        누적<span className="text-[13px] ml-0.5">{cumCount}</span>회
                       </span>
-                      <button
-                        onClick={() => { if (confirm(`${w.draw_no}회 ${label} 기록을 삭제할까요?`)) deleteHistory(w.id); }}
-                        className="text-[10px] text-gray-300 hover:text-red-500 transition-colors leading-none shrink-0 ml-auto"
-                        title="삭제"
-                      >✕</button>
+                      {w.source === 'recommendation' && (
+                        <button
+                          onClick={() => {
+                            const histId = parseInt(w.key.replace('h-', ''));
+                            if (confirm(`${w.draw_no}회 ${stratLbl} 기록을 삭제할까요?`)) deleteHistory(histId);
+                          }}
+                          className="text-[10px] text-gray-300 hover:text-red-500 transition-colors leading-none shrink-0 ml-auto"
+                          title="삭제"
+                        >✕</button>
+                      )}
                     </div>
                   </div>
                 );
