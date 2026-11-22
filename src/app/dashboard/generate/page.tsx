@@ -1081,6 +1081,94 @@ function ResultCard({ s, copied, saved, bought, onCopy, onSave, onBuy, onDiag, d
   );
 }
 
+/* ─── AI추천 카드 (인라인 진단 포함) ─── */
+function AiRecCard({
+  s, draws, bayesStats, pairStats,
+  onCopy, onUse, onSave,
+}: {
+  s: LottoSet;
+  draws: DrawRow[];
+  bayesStats: BayesStat[];
+  pairStats: PairStat[];
+  onCopy: () => void;
+  onUse: () => void;
+  onSave: () => void;
+}) {
+  const [inlineDiag, setInlineDiag] = useState<DiagResult | null>(null);
+
+  function handleDiag() {
+    if (inlineDiag) { setInlineDiag(null); return; }
+    setInlineDiag(diagnosNumbers(s.numbers, draws, bayesStats, pairStats));
+  }
+
+  return (
+    <div className="bg-white border border-emerald-200 rounded-xl p-3">
+      <div className="flex items-center gap-1.5 mb-2">
+        <span className="text-sm">{s.icon}</span>
+        <span className="text-xs font-bold text-emerald-800">{s.method.replace("AI-", "")}</span>
+        <span className="text-[10px] text-emerald-600 ml-1">{s.desc}</span>
+      </div>
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <div className="flex items-center gap-1 flex-wrap">
+          {s.numbers.map((n, i) => <Ball key={i} n={n} />)}
+        </div>
+        <button
+          onClick={handleDiag}
+          className={`text-xs px-2.5 py-1 rounded-lg border transition font-medium shrink-0
+            ${inlineDiag
+              ? "border-indigo-400 text-indigo-600 bg-indigo-50"
+              : "border-indigo-200 text-indigo-500 hover:text-indigo-600 hover:border-indigo-400 hover:bg-indigo-50"}`}
+        >
+          🔍 진단{inlineDiag ? " ▲" : ""}
+        </button>
+      </div>
+      <div className="flex gap-2">
+        <button onClick={onCopy} className="flex-1 py-1.5 text-xs font-semibold rounded-lg bg-white border border-emerald-300 text-emerald-700 hover:bg-emerald-50 transition">복사</button>
+        <button onClick={onUse}  className="flex-1 py-1.5 text-xs font-semibold rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition">✅ 사용하기</button>
+        <button onClick={onSave} className="flex-1 py-1.5 text-xs font-semibold rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition">💾 저장</button>
+      </div>
+
+      {/* 인라인 진단 결과 */}
+      {inlineDiag && (
+        <div className="mt-3 pt-3 border-t border-gray-100 space-y-2">
+          <div className={`rounded-xl px-4 py-2.5 flex items-center justify-center gap-3 border
+            ${inlineDiag.score >= 70 ? "bg-emerald-50 border-emerald-200" :
+              inlineDiag.score >= 50 ? "bg-amber-50 border-amber-200" :
+              "bg-rose-50 border-rose-200"}`}>
+            <span className={`text-2xl font-extrabold
+              ${inlineDiag.score >= 70 ? "text-emerald-600" :
+                inlineDiag.score >= 50 ? "text-amber-600" : "text-rose-600"}`}>
+              {inlineDiag.score}점
+            </span>
+            <span className="text-xs text-gray-600">
+              {inlineDiag.score >= 70 ? "✅ 우수" :
+               inlineDiag.score >= 50 ? "⚠️ 보통" : "❌ 미흡"}
+            </span>
+          </div>
+          <div className="space-y-1">
+            {inlineDiag.criteria.map((c, i) => (
+              <div key={i} className={`flex items-center justify-between rounded-lg px-2.5 py-1.5
+                ${c.pass ? "bg-emerald-50" : "bg-gray-50"}`}>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs">{c.pass ? "✅" : "❌"}</span>
+                  <span className="text-xs text-gray-700">{c.label}</span>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <span className="text-[10px] text-gray-400">{c.detail}</span>
+                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full
+                    ${c.pass ? "bg-emerald-100 text-emerald-700" : "bg-gray-100 text-gray-400"}`}>
+                    +{c.points}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ─── Constants ─── */
 const MOM_EMAIL = "yoono73@gmail.com";
 const MOM_CONFIGS = [
@@ -1997,6 +2085,25 @@ export default function GeneratePage() {
             베이지안 확률 · 공백복귀 · 복합전략을 조합해 한 번에 여러 세트를 생성합니다.
           </p>
 
+          {/* 전략 소개 */}
+          <div className="grid grid-cols-1 gap-1.5 mb-3">
+            {[
+              { icon: "🧮", name: "베이지안 집중", color: "bg-blue-50 border-blue-200 text-blue-800", desc: "1~최신회 전체 추첨 데이터를 분석해 각 번호의 사후확률을 계산합니다. 통계적으로 출현 가능성이 높은 번호에 가중치를 두어 뽑습니다." },
+              { icon: "🔮", name: "복합전략", color: "bg-purple-50 border-purple-200 text-purple-800", desc: "베이지안 확률 × 오버듀(결핍도)를 곱해 번호를 선택합니다. '통계적으로 잘 나오는 번호' + '최근 안 나온 번호'를 동시에 고려합니다." },
+              { icon: "⏰", name: "공백복귀", color: "bg-orange-50 border-orange-200 text-orange-800", desc: "마지막 출현 이후 가장 오랫동안 나오지 않은 번호(결핍도 최고)를 집중 선택합니다. 미출현 기간이 길수록 선택 확률이 높아집니다." },
+              { icon: "⚖️", name: "균형형", color: "bg-teal-50 border-teal-200 text-teal-800", desc: "베이지안 확률과 공백복귀 전략을 균형 있게 혼합합니다. 한 쪽으로 치우치지 않는 중립적인 추천을 원할 때 사용합니다." },
+              { icon: "🎯", name: "TOP5 보장", color: "bg-rose-50 border-rose-200 text-rose-800", desc: "베이지안 순위 1~5위 번호 중 최소 1개를 반드시 포함합니다. 가장 확률 높은 번호를 1개 이상 넣고 나머지는 가중 추출합니다." },
+            ].map(s => (
+              <div key={s.name} className={`flex gap-2 p-2 rounded-lg border ${s.color}`}>
+                <span className="text-base flex-shrink-0">{s.icon}</span>
+                <div>
+                  <span className="text-[11px] font-bold mr-1">{s.name}</span>
+                  <span className="text-[10px] opacity-80">{s.desc}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+
           {/* 세트 수 선택 */}
           <div className="flex items-center gap-2 mb-3">
             <span className="text-xs font-semibold text-emerald-700">세트 수:</span>
@@ -2023,30 +2130,16 @@ export default function GeneratePage() {
           {aiRecSets && aiRecSets.length > 0 && (
             <div className="space-y-2">
               {aiRecSets.map(s => (
-                <div key={s.idx} className="bg-white border border-emerald-200 rounded-xl p-3">
-                  <div className="flex items-center gap-1.5 mb-2">
-                    <span className="text-sm">{s.icon}</span>
-                    <span className="text-xs font-bold text-emerald-800">{s.method.replace("AI-", "")}</span>
-                    <span className="text-[10px] text-emerald-600 ml-1">{s.desc}</span>
-                  </div>
-                  <div className="flex items-center gap-1 flex-wrap mb-2">
-                    {s.numbers.map((n, i) => <Ball key={i} n={n} />)}
-                  </div>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => navigator.clipboard.writeText(s.numbers.join("  "))}
-                      className="flex-1 py-1.5 text-xs font-semibold rounded-lg bg-white border border-emerald-300 text-emerald-700 hover:bg-emerald-50 transition"
-                    >복사</button>
-                    <button
-                      onClick={() => { setSets([{ ...s, idx: 1 }]); setSavedSets(new Set()); setBoughtSets(new Set()); }}
-                      className="flex-1 py-1.5 text-xs font-semibold rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition"
-                    >✅ 사용하기</button>
-                    <button
-                      onClick={() => saveSet({ ...s, idx: s.idx })}
-                      className="flex-1 py-1.5 text-xs font-semibold rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition"
-                    >💾 저장</button>
-                  </div>
-                </div>
+                <AiRecCard
+                  key={s.idx}
+                  s={s}
+                  draws={draws}
+                  bayesStats={bayesStats}
+                  pairStats={pairStats}
+                  onCopy={() => navigator.clipboard.writeText(s.numbers.join("  "))}
+                  onUse={() => { setSets([{ ...s, idx: 1 }]); setSavedSets(new Set()); setBoughtSets(new Set()); }}
+                  onSave={() => saveSet({ ...s, idx: s.idx })}
+                />
               ))}
             </div>
           )}
