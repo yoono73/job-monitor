@@ -22,6 +22,18 @@ interface SavedWinner {
   checked_draw_no: number;
 }
 
+interface TestWinner {
+  id: number;
+  draw_no: number;
+  numbers: number[];
+  method: string | null;
+  category: string | null;
+  is_test?: boolean;
+  matched_count: number | null;
+  prize_rank: number | null;
+  checked_draw_no: number;
+}
+
 // ── 볼 컴포넌트 ──
 function Ball({ n, size = "sm" }: { n: number; size?: "sm" | "xs" }) {
   const color =
@@ -113,7 +125,7 @@ function DrawCard({
 }: {
   draw: DrawRow;
   realWinners: SavedWinner[];
-  testWinners: SavedWinner[];
+  testWinners: TestWinner[];
 }) {
   const winNums = [draw.n1, draw.n2, draw.n3, draw.n4, draw.n5, draw.n6].filter(Boolean) as number[];
   const hasAny = realWinners.length > 0 || testWinners.length > 0;
@@ -177,8 +189,8 @@ function DrawCard({
               {testWinners.length}건 당첨
             </span>
           </div>
-          <RankGrid winners={testWinners} accentText="text-purple-700" accentBg="bg-purple-100" />
-          <WinnerList winners={testWinners} />
+          <RankGrid winners={testWinners as SavedWinner[]} accentText="text-purple-700" accentBg="bg-purple-100" />
+          <WinnerList winners={testWinners as SavedWinner[]} />
         </div>
       )}
     </div>
@@ -213,6 +225,7 @@ export default function RankingPage() {
   const supabase = useMemo(() => createClient(), []);
   const [draws, setDraws] = useState<DrawRow[]>([]);
   const [winners, setWinners] = useState<SavedWinner[]>([]);
+  const [testWinners, setTestWinners] = useState<TestWinner[]>([]);
   const [loading, setLoading] = useState(true);
   const [loggedIn, setLoggedIn] = useState<boolean | null>(null);
 
@@ -225,10 +238,11 @@ export default function RankingPage() {
       setLoggedIn(!!user);
       if (!user) { setLoading(false); return; }
 
-      // ① saved_numbers: 체크완료 + 3개 이상 일치
+      // ① saved_numbers: 실 사용자 번호 (is_test=false)
       const { data: savedData } = await supabase
         .from("saved_numbers")
         .select("id,draw_no,numbers,method,category,is_test,matched_count,prize_rank,checked_draw_no")
+        .eq("is_test", false)
         .not("checked_draw_no", "is", null)
         .or("matched_count.gte.3,prize_rank.not.is.null")
         .order("checked_draw_no", { ascending: false });
@@ -236,13 +250,24 @@ export default function RankingPage() {
       const winRows = (savedData ?? []) as SavedWinner[];
       setWinners(winRows);
 
-      // ② 관련 회차 번호 조회 (draw_no 중복 제거)
+      // ② test_simulations: 테스트 기반 번호
+      const { data: testData } = await supabase
+        .from("test_simulations")
+        .select("id,draw_no,numbers,method,category,matched_count,prize_rank,checked_draw_no")
+        .not("checked_draw_no", "is", null)
+        .or("matched_count.gte.3,prize_rank.not.is.null")
+        .order("checked_draw_no", { ascending: false });
+
+      setTestWinners((testData ?? []) as TestWinner[]);
+
+      // ③ 관련 회차 번호 조회 (draw_no 중복 제거)
       const drawNos = [...new Set(winRows.map(w => w.checked_draw_no))];
 
-      // 체크된 당첨번호 없어도 최신 체크 회차는 보여줄 것: 체크됐지만 미당첨 회차도 포함
+      // 체크된 당첨번호 없어도 최신 체크 회차는 보여줄 것
       const { data: allChecked } = await supabase
         .from("saved_numbers")
         .select("checked_draw_no")
+        .eq("is_test", false)
         .not("checked_draw_no", "is", null);
 
       const allCheckedNos = [...new Set((allChecked ?? []).map((r: { checked_draw_no: number }) => r.checked_draw_no))];
@@ -266,10 +291,10 @@ export default function RankingPage() {
   const drawResults = useMemo(() => {
     return draws.map(draw => ({
       draw,
-      realWinners: winners.filter(w => w.checked_draw_no === draw.draw_no && w.is_test === false),
-      testWinners: winners.filter(w => w.checked_draw_no === draw.draw_no && w.is_test === true),
+      realWinners: winners.filter(w => w.checked_draw_no === draw.draw_no),
+      testWinners: testWinners.filter(w => w.checked_draw_no === draw.draw_no),
     }));
-  }, [draws, winners]);
+  }, [draws, winners, testWinners]);
 
   return (
     <div className="px-4 py-6 max-w-xl mx-auto">
