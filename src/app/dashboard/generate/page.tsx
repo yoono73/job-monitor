@@ -1378,6 +1378,19 @@ export default function GeneratePage() {
   const [aiRecSets,  setAiRecSets]  = useState<LottoSet[] | null>(null);
   const [aiRecCount, setAiRecCount] = useState<5 | 10>(5);
   const [aiRecBusy,  setAiRecBusy]  = useState(false);
+  const [aiRecMinScore, setAiRecMinScore] = useState<50 | 60 | 70>(60);
+
+  // 진단 점수 필터 적용 생성: minScore 이상 나올 때까지 최대 150번 재시도, 그래도 안 되면 최고점 반환
+  const genWithFilter = (fn: () => Six, minScore: number): { numbers: Six; score: number } => {
+    let best: { numbers: Six; score: number } = { numbers: fn(), score: 0 };
+    for (let i = 0; i < 150; i++) {
+      const nums = fn();
+      const result = diagnosNumbers([...nums], draws, bayesStats, pairStats);
+      if (result.score >= minScore) return { numbers: nums, score: result.score };
+      if (result.score > best.score) best = { numbers: nums, score: result.score };
+    }
+    return best;
+  };
 
   const runAiRec = () => {
     if (bayesStats.length < 6) return;
@@ -1396,14 +1409,17 @@ export default function GeneratePage() {
         { icon: "⚖️", label: "균형형B",        desc: "베이지안 + 공백 (재추출)",   fn: () => genBayesOverdue(draws, bayesStats) },
         { icon: "🎯", label: "TOP5 보장B",     desc: "베이지안 TOP5 (재추출)",     fn: () => genTop5Guaranteed(bayesStats) },
       ];
-      const result: LottoSet[] = strategies.slice(0, aiRecCount).map((s, i) => ({
-        idx: i + 1,
-        icon: s.icon,
-        method: `AI-${s.label}`,
-        category: "AI추천",
-        desc: s.desc,
-        numbers: s.fn(),
-      }));
+      const result: LottoSet[] = strategies.slice(0, aiRecCount).map((s, i) => {
+        const { numbers, score } = genWithFilter(s.fn, aiRecMinScore);
+        return {
+          idx: i + 1,
+          icon: s.icon,
+          method: `AI-${s.label}`,
+          category: "AI추천",
+          desc: `${s.desc} · 진단 ${score}점`,
+          numbers,
+        };
+      });
       setAiRecSets(result);
       setAiRecBusy(false);
     }, 400);
@@ -2104,18 +2120,25 @@ export default function GeneratePage() {
             ))}
           </div>
 
-          {/* 세트 수 선택 */}
-          <div className="flex items-center gap-2 mb-3">
-            <span className="text-xs font-semibold text-emerald-700">세트 수:</span>
+          {/* 세트 수 + 최소 점수 선택 */}
+          <div className="flex flex-wrap items-center gap-2 mb-3">
+            <span className="text-xs font-semibold text-emerald-700">세트:</span>
             {([5, 10] as const).map(n => (
-              <button
-                key={n}
-                onClick={() => setAiRecCount(n)}
+              <button key={n} onClick={() => setAiRecCount(n)}
                 className={`px-3 py-1 text-xs font-bold rounded-lg border transition
-                  ${aiRecCount === n
-                    ? "bg-emerald-600 text-white border-emerald-600"
-                    : "bg-white text-emerald-700 border-emerald-300 hover:bg-emerald-50"}`}
+                  ${aiRecCount === n ? "bg-emerald-600 text-white border-emerald-600" : "bg-white text-emerald-700 border-emerald-300 hover:bg-emerald-50"}`}
               >{n}세트</button>
+            ))}
+            <span className="text-xs font-semibold text-emerald-700 ml-2">조건필터:</span>
+            {([50, 60, 70] as const).map(s => (
+              <button key={s} onClick={() => setAiRecMinScore(s)}
+                className={`px-3 py-1 text-xs font-bold rounded-lg border transition
+                  ${aiRecMinScore === s
+                    ? s >= 70 ? "bg-rose-500 text-white border-rose-500"
+                      : s >= 60 ? "bg-amber-500 text-white border-amber-500"
+                      : "bg-gray-500 text-white border-gray-500"
+                    : "bg-white text-emerald-700 border-emerald-300 hover:bg-emerald-50"}`}
+              >{s}점+</button>
             ))}
             <button
               onClick={runAiRec}
