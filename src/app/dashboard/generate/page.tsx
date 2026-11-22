@@ -1559,7 +1559,7 @@ export default function GeneratePage() {
     // 50개씩 나눠서 insert (Supabase limit 대비)
     for (let i = 0; i < rows.length; i += 50) {
       const chunk = rows.slice(i, i + 50);
-      await supabase.from("saved_numbers").insert(chunk);
+      await supabase.from("test_simulations").insert(chunk);
       setTestMsg(`저장 중... ${Math.min(i + 50, 1000)}/1000`);
     }
     setTestBusy(false);

@@ -324,13 +324,14 @@ export default function StatsPage() {
       const { data: { user } } = await supabase.auth.getUser();
       setUserLoggedIn(!!user);
       if (!user) return;
-      const cols = "id,draw_no,numbers,method,category,is_test,matched_count,prize_rank,checked_draw_no";
+      const cols = "id,draw_no,numbers,method,category,matched_count,prize_rank,checked_draw_no";
+      const testCols = "id,draw_no,numbers,method,category,matched_count,prize_rank,checked_draw_no";
       const [{ data: real }, { data: test }] = await Promise.all([
         supabase.from("saved_numbers").select(cols).eq("is_test", false).not("checked_draw_no", "is", null).order("checked_draw_no", { ascending: false }),
-        supabase.from("saved_numbers").select(cols).eq("is_test", true).not("checked_draw_no", "is", null).order("checked_draw_no", { ascending: false }),
+        supabase.from("test_simulations").select(testCols).not("checked_draw_no", "is", null).order("checked_draw_no", { ascending: false }),
       ]);
       if (real) setMyNumbers(real as MyNumberRow[]);
-      if (test) setMyTestNumbers(test as MyNumberRow[]);
+      if (test) setMyTestNumbers((test as Omit<MyNumberRow, "is_test">[]).map(r => ({ ...r, is_test: true })));
     };
     fetchMyNumbers();
   }, [supabase, refreshTrigger]);
