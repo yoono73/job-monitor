@@ -2168,8 +2168,8 @@ export default function GeneratePage() {
                   onCopy={() => navigator.clipboard.writeText(s.numbers.join("  "))}
                   onUse={() => {
                     setSets(prev => {
-                      const next = [...prev, { ...s, idx: prev.length + 1 }];
-                      return next;
+                      const cur = prev ?? [];
+                      return [...cur, { ...s, idx: cur.length + 1 }];
                     });
                   }}
                   onSave={() => saveSet({ ...s, idx: s.idx })}
