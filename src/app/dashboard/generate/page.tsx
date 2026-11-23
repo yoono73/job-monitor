@@ -1585,17 +1585,22 @@ export default function GeneratePage() {
         method: m.label,
         category: m.category,
         set_idx: i + 1,
-        is_test: true,
       };
     });
     // 50개씩 나눠서 insert (Supabase limit 대비)
+    let failed = 0;
     for (let i = 0; i < rows.length; i += 50) {
       const chunk = rows.slice(i, i + 50);
-      await supabase.from("test_simulations").insert(chunk);
+      const { error } = await supabase.from("test_simulations").insert(chunk);
+      if (error) { failed += chunk.length; }
       setTestMsg(`저장 중... ${Math.min(i + 50, 1000)}/1000`);
     }
     setTestBusy(false);
-    setTestMsg(`✅ ${nextDrawNo}회 테스트 1000세트 저장 완료!`);
+    if (failed > 0) {
+      setTestMsg(`⚠️ ${failed}건 저장 실패 — 콘솔 확인`);
+    } else {
+      setTestMsg(`✅ ${nextDrawNo}회 테스트 1000세트 저장 완료!`);
+    }
     setTimeout(() => setTestMsg(null), 4000);
   }, [userId, nextDrawNo, draws, bayesStats, supabase, testBusy]);
 
