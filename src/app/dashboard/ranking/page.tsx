@@ -226,6 +226,7 @@ export default function RankingPage() {
   const [draws, setDraws] = useState<DrawRow[]>([]);
   const [winners, setWinners] = useState<SavedWinner[]>([]);
   const [testWinners, setTestWinners] = useState<TestWinner[]>([]);
+  const [testSimSummary, setTestSimSummary] = useState<{ draw_no: number; total: number; checked: boolean }[]>([]);
   const [loading, setLoading] = useState(true);
   const [loggedIn, setLoggedIn] = useState<boolean | null>(null);
 
@@ -250,7 +251,7 @@ export default function RankingPage() {
       const winRows = (savedData ?? []) as SavedWinner[];
       setWinners(winRows);
 
-      // ② test_simulations: 테스트 기반 번호
+      // ② test_simulations: 테스트 기반 번호 (당첨자 필터)
       const { data: testData } = await supabase
         .from("test_simulations")
         .select("id,draw_no,numbers,method,category,matched_count,prize_rank,checked_draw_no")
@@ -259,6 +260,27 @@ export default function RankingPage() {
         .order("checked_draw_no", { ascending: false });
 
       setTestWinners((testData ?? []) as TestWinner[]);
+
+      // ② -b test_simulations 전체 현황 (미체크 포함, draw_no별 집계)
+      const { data: simAllData } = await supabase
+        .from("test_simulations")
+        .select("draw_no,checked_draw_no")
+        .order("draw_no", { ascending: false });
+
+      if (simAllData && simAllData.length > 0) {
+        const grouped = new Map<number, { total: number; checked: boolean }>();
+        for (const row of simAllData as { draw_no: number; checked_draw_no: number | null }[]) {
+          const prev = grouped.get(row.draw_no) ?? { total: 0, checked: false };
+          grouped.set(row.draw_no, {
+            total: prev.total + 1,
+            checked: prev.checked || row.checked_draw_no !== null,
+          });
+        }
+        const summary = Array.from(grouped.entries())
+          .map(([draw_no, v]) => ({ draw_no, ...v }))
+          .sort((a, b) => b.draw_no - a.draw_no);
+        setTestSimSummary(summary);
+      }
 
       // ③ 관련 회차 번호 조회 (draw_no 중복 제거)
       const drawNos = [...new Set(winRows.map(w => w.checked_draw_no))];
@@ -316,6 +338,35 @@ export default function RankingPage() {
       {/* 미로그인 or 빈 상태 */}
       {!loading && (draws.length === 0) && (
         <EmptyState loggedIn={loggedIn} />
+      )}
+
+      {/* 테스트 시뮬레이션 현황 (미체크 포함 — 항상 표시) */}
+      {!loading && testSimSummary.length > 0 && (
+        <div className="mb-6">
+          <h2 className="text-sm font-bold text-gray-700 mb-2">🧪 테스트 시뮬레이션 현황</h2>
+          <div className="space-y-2">
+            {testSimSummary.map(({ draw_no, total, checked }) => (
+              <div
+                key={draw_no}
+                className="flex items-center justify-between bg-white border border-gray-100 rounded-xl px-4 py-3 shadow-sm"
+              >
+                <div>
+                  <span className="text-sm font-bold text-gray-800">제{draw_no}회</span>
+                  <span className="ml-2 text-xs text-gray-500">{total.toLocaleString()}세트 생성됨</span>
+                </div>
+                <span
+                  className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${
+                    checked
+                      ? "bg-green-50 text-green-700 border-green-200"
+                      : "bg-amber-50 text-amber-600 border-amber-200"
+                  }`}
+                >
+                  {checked ? "✅ 체크완료" : "⏳ 추첨 전"}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
       )}
 
       {/* 회차 카드 목록 */}
