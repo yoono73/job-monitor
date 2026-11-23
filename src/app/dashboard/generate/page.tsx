@@ -1441,6 +1441,7 @@ export default function GeneratePage() {
   const [bdInput,     setBdInput]    = useState("");
   const [showBdForm,  setShowBdForm] = useState(false);
   const [luckyCopied, setLuckyCopied] = useState(false);
+  const [nextRecs,    setNextRecs]   = useState<Record<string, unknown>[]>([]);
 
   // 선호번호
   const [favorites,   setFavorites]  = useState<number[]>([]);
@@ -1468,6 +1469,13 @@ export default function GeneratePage() {
       .order("posterior_mean", { ascending: false })
       .limit(100)
       .then(({ data }) => { if (data) setPairStats(data as PairStat[]); });
+
+    supabase.from("lotto_next_recommendation")
+      .select("*")
+      .order("draw_no", { ascending: false })
+      .order("set_label")
+      .limit(10)
+      .then(({ data }) => { if (data) setNextRecs(data as Record<string, unknown>[]); });
 
     // 생년월일 로컬 스토리지 로드
     try {
@@ -2172,6 +2180,63 @@ export default function GeneratePage() {
           )}
         </div>
       </div>
+
+      {/* ━━━ 🔮 다음 회차 AI 추천 번호 ━━━ */}
+      {nextRecs.length > 0 && (() => {
+        const drawNo = (nextRecs[0] as Record<string, unknown>).draw_no as number;
+        const createdAt = (nextRecs[0] as Record<string, unknown>).created_at as string;
+        const strategyColors: Record<string, string> = {
+          "베이지안 집중": "bg-orange-100 text-orange-700 border-orange-200",
+          "공백복귀 중심": "bg-sky-100 text-sky-700 border-sky-200",
+          "균형형":        "bg-emerald-100 text-emerald-700 border-emerald-200",
+          "공백+베이지안": "bg-violet-100 text-violet-700 border-violet-200",
+          "트렌드":        "bg-rose-100 text-rose-700 border-rose-200",
+        };
+        return (
+          <div className="mb-5 bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-200 rounded-2xl p-4">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <span className="text-lg">🔮</span>
+                <div>
+                  <h3 className="text-sm font-extrabold text-amber-900">다음 회차 AI 추천 번호</h3>
+                  <p className="text-[10px] text-amber-600">제 {drawNo}회 · 베이지안 + 공백복귀 복합 분析</p>
+                </div>
+              </div>
+              <span className="text-[9px] text-amber-500">
+                {new Date(createdAt).toLocaleDateString("ko-KR", { month: "short", day: "numeric" })} 생성
+              </span>
+            </div>
+            <div className="space-y-2">
+              {(nextRecs as Record<string, unknown>[]).filter(r => r.draw_no === drawNo).map(rec => {
+                const colorCls = strategyColors[rec.strategy as string] ?? "bg-gray-100 text-gray-700 border-gray-200";
+                return (
+                  <div key={rec.id as number} className="bg-white rounded-xl p-3 border border-amber-100">
+                    <div className="flex items-center gap-1.5 mb-2 flex-wrap">
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${colorCls}`}>
+                        세트 {rec.set_label as string}
+                      </span>
+                      <span className="text-[10px] text-gray-500">{rec.strategy as string}</span>
+                      {!!rec.num_sum && (
+                        <span className="text-[10px] text-gray-400 ml-auto">
+                          합{rec.num_sum as number} · span{rec.num_span as number}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {(rec.numbers as number[]).map((n, i) => (
+                        <Ball key={i} n={n} />
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <p className="text-[9px] text-amber-500 mt-2 text-center">
+              ※ 통계적 참고자료입니다. 당첨을 보장하지 않습니다.
+            </p>
+          </div>
+        );
+      })()}
 
       {/* ━━━ 🔮 오늘의 행운 번호 ━━━ */}
       <div className="mb-5">
