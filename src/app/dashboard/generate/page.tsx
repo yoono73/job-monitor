@@ -1442,6 +1442,7 @@ export default function GeneratePage() {
   const [showBdForm,  setShowBdForm] = useState(false);
   const [luckyCopied, setLuckyCopied] = useState(false);
   const [nextRecs,    setNextRecs]   = useState<Record<string, unknown>[]>([]);
+  const [nextRecDraw, setNextRecDraw] = useState<{ n1:number;n2:number;n3:number;n4:number;n5:number;n6:number;bonus:number } | null>(null);
 
   // 선호번호
   const [favorites,   setFavorites]  = useState<number[]>([]);
@@ -1475,7 +1476,18 @@ export default function GeneratePage() {
       .order("draw_no", { ascending: false })
       .order("set_label")
       .limit(10)
-      .then(({ data }) => { if (data) setNextRecs(data as Record<string, unknown>[]); });
+      .then(async ({ data }) => {
+        if (!data || data.length === 0) return;
+        setNextRecs(data as Record<string, unknown>[]);
+        // 해당 회차 당첨번호 조회 (이미 발표됐으면 표시)
+        const drawNo = (data[0] as Record<string, unknown>).draw_no as number;
+        const { data: drawData } = await supabase
+          .from("lotto_draws")
+          .select("n1,n2,n3,n4,n5,n6,bonus")
+          .eq("draw_no", drawNo)
+          .single();
+        if (drawData) setNextRecDraw(drawData as { n1:number;n2:number;n3:number;n4:number;n5:number;n6:number;bonus:number });
+      });
 
     // 생년월일 로컬 스토리지 로드
     try {
@@ -2192,6 +2204,19 @@ export default function GeneratePage() {
           "공백+베이지안": "bg-violet-100 text-violet-700 border-violet-200",
           "트렌드":        "bg-rose-100 text-rose-700 border-rose-200",
         };
+        // 등수 계산
+        const calcRank = (nums: number[]): { label: string; cls: string } | null => {
+          if (!nextRecDraw) return null;
+          const winning = [nextRecDraw.n1, nextRecDraw.n2, nextRecDraw.n3, nextRecDraw.n4, nextRecDraw.n5, nextRecDraw.n6];
+          const matched = nums.filter(n => winning.includes(n)).length;
+          const hasBonus = nums.includes(nextRecDraw.bonus);
+          if (matched === 6) return { label: "🏆 1등", cls: "bg-yellow-100 text-yellow-800 border-yellow-300" };
+          if (matched === 5 && hasBonus) return { label: "🥈 2등", cls: "bg-gray-100 text-gray-700 border-gray-300" };
+          if (matched === 5) return { label: "🥉 3등", cls: "bg-orange-100 text-orange-700 border-orange-300" };
+          if (matched === 4) return { label: "4등", cls: "bg-blue-100 text-blue-700 border-blue-300" };
+          if (matched === 3) return { label: "5등", cls: "bg-green-100 text-green-700 border-green-300" };
+          return { label: "낙첨", cls: "bg-gray-100 text-gray-400 border-gray-200" };
+        };
         return (
           <div className="mb-5 bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-200 rounded-2xl p-4">
             <div className="flex items-center justify-between mb-3">
@@ -2199,7 +2224,10 @@ export default function GeneratePage() {
                 <span className="text-lg">🔮</span>
                 <div>
                   <h3 className="text-sm font-extrabold text-amber-900">다음 회차 AI 추천 번호</h3>
-                  <p className="text-[10px] text-amber-600">제 {drawNo}회 · 베이지안 + 공백복귀 복합 분析</p>
+                  <p className="text-[10px] text-amber-600">
+                    제 {drawNo}회 · 베이지안 + 공백복귀 복합 분析
+                    {nextRecDraw && <span className="ml-1 text-emerald-600 font-bold">· 검증완료</span>}
+                  </p>
                 </div>
               </div>
               <span className="text-[9px] text-amber-500">
@@ -2209,6 +2237,7 @@ export default function GeneratePage() {
             <div className="space-y-2">
               {(nextRecs as Record<string, unknown>[]).filter(r => r.draw_no === drawNo).map(rec => {
                 const colorCls = strategyColors[rec.strategy as string] ?? "bg-gray-100 text-gray-700 border-gray-200";
+                const rank = calcRank(rec.numbers as number[]);
                 return (
                   <div key={rec.id as number} className="bg-white rounded-xl p-3 border border-amber-100">
                     <div className="flex items-center gap-1.5 mb-2 flex-wrap">
@@ -2217,8 +2246,13 @@ export default function GeneratePage() {
                       </span>
                       <span className="text-[10px] text-gray-500">{rec.strategy as string}</span>
                       {!!rec.num_sum && (
-                        <span className="text-[10px] text-gray-400 ml-auto">
+                        <span className="text-[10px] text-gray-400">
                           합{rec.num_sum as number} · span{rec.num_span as number}
+                        </span>
+                      )}
+                      {rank && (
+                        <span className={`ml-auto text-[11px] font-extrabold px-2 py-0.5 rounded-full border ${rank.cls}`}>
+                          {rank.label}
                         </span>
                       )}
                     </div>
@@ -2231,7 +2265,12 @@ export default function GeneratePage() {
                 );
               })}
             </div>
-            <p className="text-[9px] text-amber-500 mt-2 text-center">
+            {nextRecDraw && (
+              <div className="mt-2 text-[9px] text-center text-emerald-600">
+                제{drawNo}회 당첨번호: {[nextRecDraw.n1,nextRecDraw.n2,nextRecDraw.n3,nextRecDraw.n4,nextRecDraw.n5,nextRecDraw.n6].join(", ")} (보너스 {nextRecDraw.bonus})
+              </div>
+            )}
+            <p className="text-[9px] text-amber-500 mt-1 text-center">
               ※ 통계적 참고자료입니다. 당첨을 보장하지 않습니다.
             </p>
           </div>
