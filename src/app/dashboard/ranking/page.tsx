@@ -250,18 +250,21 @@ export default function RankingPage() {
       const winRows = (savedData ?? []) as SavedWinner[];
       setWinners(winRows);
 
-      // ② test_simulations: 테스트 기반 번호 (당첨자 필터)
+      // ② test_simulations: 테스트 기반 번호 (당첨자 필터, 로그인 유저 것만)
       const { data: testData } = await supabase
         .from("test_simulations")
         .select("id,draw_no,numbers,method,category,matched_count,prize_rank,checked_draw_no")
+        .eq("user_id", user.id)
         .not("checked_draw_no", "is", null)
         .or("matched_count.gte.3,prize_rank.not.is.null")
         .order("checked_draw_no", { ascending: false });
 
-      setTestWinners((testData ?? []) as TestWinner[]);
+      const testRows = (testData ?? []) as TestWinner[];
+      setTestWinners(testRows);
 
-      // ③ 관련 회차 번호 조회 (draw_no 중복 제거)
+      // ③ 관련 회차 번호 조회 (draw_no 중복 제거) — 사용자+테스트 모두 포함
       const drawNos = [...new Set(winRows.map(w => w.checked_draw_no))];
+      const testDrawNos = [...new Set(testRows.map(w => w.checked_draw_no).filter(Boolean) as number[])];
 
       // 체크된 당첨번호 없어도 최신 체크 회차는 보여줄 것
       const { data: allChecked } = await supabase
@@ -271,7 +274,7 @@ export default function RankingPage() {
         .not("checked_draw_no", "is", null);
 
       const allCheckedNos = [...new Set((allChecked ?? []).map((r: { checked_draw_no: number }) => r.checked_draw_no))];
-      const mergedNos = [...new Set([...drawNos, ...allCheckedNos])].sort((a, b) => b - a).slice(0, 10);
+      const mergedNos = [...new Set([...drawNos, ...testDrawNos, ...allCheckedNos])].sort((a, b) => b - a).slice(0, 10);
 
       if (mergedNos.length > 0) {
         const { data: drawData } = await supabase

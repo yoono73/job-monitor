@@ -137,30 +137,45 @@ export default function HistoryPage() {
       };
 
       setItems(allRows.filter(s => !s.is_test).map(toHistoryItem));
-      setItemsTest(allRows.filter(s => s.is_test).map(toHistoryItem));
 
-      // test_simulations에서 테스트 데이터 집계 (draw_no별 요약)
+      // test_simulations에서 개별 아이템 로드
       const { data: testSimRaw } = await supabase
         .from("test_simulations")
-        .select("draw_no, checked_draw_no, matched_count, prize_rank")
-        .eq("user_id", user.id);
+        .select("id,draw_no,numbers,method,category,set_idx,created_at,checked_draw_no,matched_count,prize_rank")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false });
 
-      if (testSimRaw && testSimRaw.length > 0) {
-        const grouped = new Map<number, { total: number; winners: number; checked: boolean }>();
-        for (const row of testSimRaw as { draw_no: number; checked_draw_no: number | null; matched_count: number | null; prize_rank: number | null }[]) {
-          const prev = grouped.get(row.draw_no) ?? { total: 0, winners: 0, checked: false };
-          grouped.set(row.draw_no, {
-            total: prev.total + 1,
-            winners: prev.winners + (row.matched_count !== null && row.matched_count >= 3 ? 1 : 0),
-            checked: prev.checked || row.checked_draw_no !== null,
-          });
-        }
-        const summary = Array.from(grouped.entries())
-          .map(([draw_no, v]) => ({ draw_no, ...v }))
-          .sort((a, b) => b.draw_no - a.draw_no);
-        setTestSimGroups(summary);
+      const testSimRows = (testSimRaw ?? []) as Array<{
+        id: string; draw_no: number; numbers: number[]; method: string; category: string;
+        set_idx: number; created_at: string; checked_draw_no: number | null;
+        matched_count: number | null; prize_rank: number | null;
+      }>;
+
+      // saved_numbers is_test=true 기존 데이터 유지
+      const legacyTest = allRows.filter(s => s.is_test).map(toHistoryItem);
+
+      // test_simulations draw 데이터 보완
+      const testDrawNos = [...new Set(testSimRows.map(r => r.draw_no).filter(no => !drawMap.has(no)))];
+      if (testDrawNos.length > 0) {
+        const { data: extraDraws } = await supabase
+          .from("lotto_draws")
+          .select("draw_no,n1,n2,n3,n4,n5,n6,bonus,draw_date")
+          .in("draw_no", testDrawNos);
+        (extraDraws as DrawRow[] ?? []).forEach(d => drawMap.set(d.draw_no, d));
       }
 
+      const testSimItems: HistoryItem[] = testSimRows.map(r => {
+        const fakeRow: SavedRow = {
+          id: r.id, draw_no: r.draw_no, numbers: r.numbers,
+          method: r.method ?? "", category: r.category ?? "",
+          set_idx: r.set_idx, created_at: r.created_at,
+          purchased: false, is_test: true,
+        };
+        return toHistoryItem(fakeRow);
+      });
+
+      setItemsTest([...legacyTest, ...testSimItems]);
+      setTestSimGroups([]);
       setLoading(false);
     }
     load();
@@ -622,35 +637,8 @@ export default function HistoryPage() {
         </div>
       )}
 
-      {/* 테스트 탭 — test_simulations 요약 (추첨 전도 표시) */}
-      {!loading && histTab === "test" && testSimGroups.length > 0 && (
-        <div className="mt-2">
-          <h2 className="text-xs font-bold text-gray-500 mb-2 px-1">🧪 테스트 시뮬레이션 현황</h2>
-          <div className="space-y-2">
-            {testSimGroups.map(({ draw_no, total, winners, checked }) => (
-              <div key={draw_no} className="flex items-center justify-between bg-white border border-gray-100 rounded-xl px-4 py-3 shadow-sm">
-                <div>
-                  <span className="text-sm font-bold text-gray-800">제{draw_no}회</span>
-                  <span className="ml-2 text-xs text-gray-400">{total.toLocaleString()}세트</span>
-                  {checked && winners > 0 && (
-                    <span className="ml-2 text-xs font-semibold text-emerald-600">당첨 {winners}건</span>
-                  )}
-                </div>
-                <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${
-                  checked
-                    ? "bg-green-50 text-green-700 border-green-200"
-                    : "bg-amber-50 text-amber-600 border-amber-200"
-                }`}>
-                  {checked ? "✅ 체크완료" : "⏳ 추첨 전"}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
       {/* 테스트 탭 — 아무 데이터도 없을 때 */}
-      {!loading && histTab === "test" && testSimGroups.length === 0 && itemsTest.length === 0 && (
+      {!loading && histTab === "test" && itemsTest.length === 0 && (
         <div className="flex flex-col items-center justify-center py-20 text-center">
           <span className="text-4xl mb-3">🧪</span>
           <p className="text-gray-600 font-semibold mb-1">테스트 데이터가 없어요</p>
