@@ -1,8 +1,6 @@
-FAIL  [국립암센터] 국립암센터 정규직 약무직 채용공고 → https://ncc.recruiter.co.kr/career/jobs/135663
-OK    [한국수자원공사] [한국수자원공사] 광주수도지사 특수직(수탁운영_지방상수도 시설운 → https://k-water.recruiter.co.kr/
-OK    [학교법인한국폴리텍] 한국폴리텍대학 서울정수캠퍼스 행정지원직(휴직대체) 채용 공고 → https://www.kopo.ac.kr/jungsu/board.do?menu=254&mode=view&post=791420
-OK    [경기도 화성시] 화성시 개방형직위 채용계획 공고[공보실장, 감사관, 독립기념관장 → https://www.hscity.go.kr/www/gosi/BD_employment.do?q_cp=&amp;q_notAncmtSeCode=05
-SKIP  [부산광역시] url=None 이미 처리됨
-OK    [전남광주통합특별시] 2026년도 전남광주통합특별시 개방형직위 투자기관설립추진단장 공 → https://www.jeonnam-gwangju.go.kr/boardView.do?pageId=jngj28&amp;boardId=JG_0000
-SKIP  [방송미디어통신위원회] url=None 이미 처리됨
-OK    [식품의약품안전처] 2026년 식품의약품안전처 의약품안전국 연구위원 및 심사원 채용 → https://employ.mfds.go.kr/pblanc/view.do?pblancSeq=10719&amp;searchPblancType=B&
+OK    [국립암센터] 국립암센터 정규직 기술직 채용공고 → https://ncc.recruiter.co.kr/career/jobs/135681
+OK    [전남광주통합특별시] 2026년도 전남광주통합특별시 전문임기제공무원 청년정책소통관·청 → https://www.jeonnam-gwangju.go.kr/boardView.do?pageId=jngj28&amp;boardId=JG_0000
+OK    [10.29이태원참사진상규명과재발방지를] 별정직 공무원(고위공무원 나등급) 채용시험 공고 → https://1029itaewoncommission.go.kr/site/itaewon/page/news/notices/?board_id=BBS
+OK    [10.29이태원참사진상규명과재발방지를] 별정직 공무원(4급 상당 이하) 채용시험 공고 → https://1029itaewoncommission.go.kr/site/itaewon/page/news/notices/?board_id=BBS
+FAIL  [한국체육대학교] 한국체육대학교 국가공무원(사서8급) 전입(지방공무원 경력경쟁채용 → https://www.knsu.ac.kr/knsu/unilife/notice.do?mode=view&amp;articleNo=56752&amp;
+FAIL  [경기도 동두천시] 2026년 제6회 동두천시 지방임기제공무원 임용시험 시행계획 재 → https://www.ddc.go.kr/ddc/selectBbsNttView.do?key=2009&amp;bbsNo=110&amp;nttNo=1
