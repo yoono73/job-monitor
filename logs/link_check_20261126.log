@@ -1,0 +1,8 @@
+FAIL  [국립암센터] 국립암센터 정규직 약무직 채용공고 → https://ncc.recruiter.co.kr/career/jobs/135663
+OK    [한국수자원공사] [한국수자원공사] 광주수도지사 특수직(수탁운영_지방상수도 시설운 → https://k-water.recruiter.co.kr/
+OK    [학교법인한국폴리텍] 한국폴리텍대학 서울정수캠퍼스 행정지원직(휴직대체) 채용 공고 → https://www.kopo.ac.kr/jungsu/board.do?menu=254&mode=view&post=791420
+OK    [경기도 화성시] 화성시 개방형직위 채용계획 공고[공보실장, 감사관, 독립기념관장 → https://www.hscity.go.kr/www/gosi/BD_employment.do?q_cp=&amp;q_notAncmtSeCode=05
+SKIP  [부산광역시] url=None 이미 처리됨
+OK    [전남광주통합특별시] 2026년도 전남광주통합특별시 개방형직위 투자기관설립추진단장 공 → https://www.jeonnam-gwangju.go.kr/boardView.do?pageId=jngj28&amp;boardId=JG_0000
+SKIP  [방송미디어통신위원회] url=None 이미 처리됨
+OK    [식품의약품안전처] 2026년 식품의약품안전처 의약품안전국 연구위원 및 심사원 채용 → https://employ.mfds.go.kr/pblanc/view.do?pblancSeq=10719&amp;searchPblancType=B&
